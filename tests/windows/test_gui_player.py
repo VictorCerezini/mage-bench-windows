@@ -34,7 +34,7 @@ class FakeSocket:
 @pytest.fixture
 def harness(tmp_path, monkeypatch):
     catalog = tmp_path / "catalog.json"
-    catalog.write_text(json.dumps({"models": [{"id": "fake-model", "efforts": ["medium", "high"]}]}))
+    catalog.write_text(json.dumps({"models": [{"id": "gpt-6-astra", "efforts": ["medium", "high"]}]}))
     deck = tmp_path / "deck.dck"
     deck.write_text("40 Island\n")
     request = {
@@ -42,7 +42,7 @@ def harness(tmp_path, monkeypatch):
         "server_port": 18171,
         "catalog": str(catalog),
         "deck": str(deck),
-        "model": "fake-model",
+        "model": "gpt-6-astra",
         "reasoning": "high",
         "seat": 2,
         "game_type": "Two Player Duel",
@@ -120,7 +120,7 @@ def test_selection_reaches_player_only_after_game_starts(harness, monkeypatch, p
 
     def start(prompt, out, _err, _url, *, model, reasoning, tool_timeout_seconds):
         assert waiting == [False, False, True]
-        assert (model, reasoning) == ("fake-model", "high")
+        assert (model, reasoning) == ("gpt-6-astra", "high")
         assert tool_timeout_seconds == gui_player.MAX_SECONDS + 60
         assert "opponent's deck" in prompt
         assert request["game_type"] in prompt

@@ -7,6 +7,8 @@ import threading
 
 from windows import paths, subscription_client
 
+GUI_MODELS = {"gpt-6-astra", "gpt-6-luna", "gpt-6.1-sol"}
+
 
 class CatalogClient:
     def __enter__(self):
@@ -90,7 +92,7 @@ def read_catalog(call):
         params = {"limit": 100, "includeHidden": False, "cursor": cursor}
         page = call("model/list", params)
         for item in page["data"]:
-            if item["hidden"]:
+            if item["hidden"] or item["model"] not in GUI_MODELS:
                 continue
             efforts = [entry["reasoningEffort"] for entry in item["supportedReasoningEfforts"]]
             if not efforts or item["defaultReasoningEffort"] not in efforts:
@@ -111,7 +113,7 @@ def read_catalog(call):
             raise ValueError("Codex returned a repeated model catalog cursor")
         seen.add(cursor)
     if not models:
-        raise RuntimeError("Codex returned no available ChatGPT models")
+        raise RuntimeError("No GPT-6 Astra, GPT-6 Luna or GPT-6.1 Sol model is available through this ChatGPT sign-in")
     return {"provider": "chatgpt_subscription", "models": models}
 
 
@@ -121,6 +123,8 @@ def discover():
 
 
 def validate_selection(catalog, model, reasoning):
+    if model not in GUI_MODELS:
+        raise ValueError(f"{model} is not offered in this GUI; choose GPT-6 Astra, GPT-6 Luna or GPT-6.1 Sol")
     for item in catalog["models"]:
         if item["id"] == model:
             if reasoning not in item["efforts"]:

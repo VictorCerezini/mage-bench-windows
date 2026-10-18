@@ -51,6 +51,10 @@ or supported effort levels are invented, and an unavailable selection fails
 explicitly. Model discovery uses `account/read` and `model/list` only: it starts
 no thread or inference. See the [official model discovery documentation](https://learn.chatgpt.com/docs/app-server#list-models-modellist).
 
+The selector is limited to **GPT-6 Astra**, **GPT-6 Luna**, and **GPT-6.1 Sol**, and
+only shows those returned by the current sign-in. GPT-5.6 models and GPT-6 Sol are
+excluded. Reopen the launcher to refresh the menu after changing this policy.
+
 Click **Create**, wait for **ChatGPT 2** to join, then click **Start**. Opening the
 GUI or creating a table does not consume model inference; the player starts only
 when the game begins. Choose a starting player, respond to the mulligan prompt,
