@@ -1,0 +1,10 @@
+{
+  "title": "Resolve npm Codex native executable without assuming nested dependencies",
+  "description": "Setup.ps1 auto-detection for npm shim installations hard-codes node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe. A verified project-local installation of official @openai/codex 0.163.0 hoists the platform package to node_modules/@openai/codex-win32-x64 instead. The current PC is fixed with an explicit native codex_executable path to the isolated updated connector; README documents reproduction using -CodexPath. Future setup auto-detection should use npm/Node package resolution anchored to the chosen shim, fail clearly for unsupported installs and respect an explicitly supplied native executable, rather than silently guessing/falling back to another installed client. Preserve the supported ChatGPT sign-in in place, never inspect/copy auth files, and keep binaries/cache/config ignored. Acceptance: resolve a real hoisted installation and a fixture nested installation, reject missing/ambiguous native packages, and ensure no unrelated global executable is selected.",
+  "status": "open",
+  "priority": 3,
+  "type": "task",
+  "labels": ["windows", "setup"],
+  "created_at": "2026-10-18T17:44:11Z",
+  "updated_at": "2026-10-18T17:44:11Z"
+}

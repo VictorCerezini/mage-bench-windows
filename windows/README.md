@@ -55,6 +55,30 @@ The selector is limited to **GPT-6 Astra**, **GPT-6 Luna**, and **GPT-6.1 Sol**,
 only shows those returned by the current sign-in. GPT-5.6 models and GPT-6 Sol are
 excluded. Reopen the launcher to refresh the menu after changing this policy.
 
+The connector version matters: on 18 October 2026 the installed 0.153.4 CLI
+returned Astra plus the older 5.6 models even after refreshing its catalog.
+An isolated 0.163.0 copy returned all three requested GPT-6 models through the
+same sign-in. Discovery and configuration rendering were verified without model
+turns; account/client availability is still determined by the live catalog.
+
+To reproduce this project-local connector installation from the repository root:
+
+```powershell
+npm install --prefix .windows-local/tools/codex-0.163.0 --no-audit --no-fund @openai/codex@0.163.0
+$connector = (Resolve-Path '.windows-local/tools/codex-0.163.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe').Path
+$runtime = Get-Content -LiteralPath '.windows-local/settings.json' -Raw | ConvertFrom-Json
+& .\windows\Setup.ps1 -SkipBuild -JavaHome $runtime.java_home -MavenPath $runtime.maven_path -MavenRepository $runtime.maven_repository -CodexPath $connector
+```
+
+Close the fork before rerunning Setup. Explicit `-CodexPath` avoids npm package
+layout assumptions. This keeps the global CLI in place and uses its normal
+supported sign-in without copying authentication. For this PC, only the ignored
+runtime `codex_executable` setting was switched, with an ignored pre-update settings
+backup; Java did not need rebuilding. The existing desktop shortcut is unchanged.
+Already-open clients retain their original catalog until reopened.
+The read-only catalog refresh and prompt renderer are documented in the
+[official CLI reference](https://learn.chatgpt.com/docs/cli/reference#codex-debug-models).
+
 Click **Create**, wait for **ChatGPT 2** to join, then click **Start**. Opening the
 GUI or creating a table does not consume model inference; the player starts only
 when the game begins. Choose a starting player, respond to the mulligan prompt,
