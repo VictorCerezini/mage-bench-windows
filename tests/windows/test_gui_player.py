@@ -72,9 +72,22 @@ def harness(tmp_path, monkeypatch):
         stop_tree=stop,
         save_json=lambda path, value: path.write_text(json.dumps(value)),
     )
-    gateway = SimpleNamespace(url="http://127.0.0.1:12346/mcp", violations=[], call_count=0, close=lambda: None)
+    gateway = SimpleNamespace(
+        url="http://127.0.0.1:12346/mcp",
+        violations=[],
+        call_count=0,
+        fatal_error=None,
+        close=lambda: None,
+        optimization_stats=lambda: {"policy": "gui-efficient-v1"},
+    )
     monkeypatch.setattr(gui_player.socket, "socket", FakeSocket)
-    monkeypatch.setattr(gui_player, "GameToolGateway", lambda *_args, **_kwargs: gateway)
+
+    def make_gateway(*_args, **kwargs):
+        assert kwargs["optimize_play"] is True
+        assert kwargs["upstream_timeout"] > gui_player.MAX_SECONDS
+        return gateway
+
+    monkeypatch.setattr(gui_player, "GameToolGateway", make_gateway)
     monkeypatch.setattr(gui_player.time, "sleep", lambda _: None)
     monkeypatch.setattr(gui_player, "check_owner", lambda *_: None)
     return request, runtime, stopped, gateway
@@ -105,9 +118,10 @@ def test_selection_reaches_player_only_after_game_starts(harness, monkeypatch, p
             return result({"available": available})
         return result({"action_pending": False})
 
-    def start(prompt, out, _err, _url, *, model, reasoning):
+    def start(prompt, out, _err, _url, *, model, reasoning, tool_timeout_seconds):
         assert waiting == [False, False, True]
         assert (model, reasoning) == ("fake-model", "high")
+        assert tool_timeout_seconds == gui_player.MAX_SECONDS + 60
         assert "opponent's deck" in prompt
         assert request["game_type"] in prompt
         assert f"Number of players: {players}" in prompt
@@ -122,6 +136,7 @@ def test_selection_reaches_player_only_after_game_starts(harness, monkeypatch, p
     assert manifest["status"] == "completed"
     assert manifest["cleanup_complete"] is True
     assert manifest["usage"][0]["input_tokens"] == 10
+    assert manifest["optimization"]["policy"] == "gui-efficient-v1"
     assert len(stopped) == 2
 
 
@@ -199,3 +214,21 @@ def test_table_cancellation_stops_player_even_when_window_remains_open(harness):
     assert manifest["cleanup_complete"] is True
     assert len(stopped) == 1
     start.assert_not_called()
+
+
+def test_table_cancellation_during_a_blocked_player_wait_still_cleans_both_processes(harness, monkeypatch):
+    request, runtime, stopped, _ = harness
+    monkeypatch.setattr(gui_player, "rpc", lambda *_: result({"available": True}))
+
+    def cancel_during_play(_events):
+        (Path(request["run"]) / "cancel.requested").write_text("Table closed during human wait")
+
+    monkeypatch.setattr(gui_player, "require_game_only_events", cancel_during_play)
+    agent = SimpleNamespace(poll=lambda: None)
+    start = Mock(return_value=agent)
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 0
+    manifest = json.loads((Path(request["run"]) / "manifest.json").read_text())
+    assert manifest["status"] == "cancelled"
+    assert manifest["cleanup_complete"] is True
+    assert len(stopped) == 2
+    start.assert_called_once()

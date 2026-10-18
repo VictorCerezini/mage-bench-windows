@@ -32,7 +32,11 @@ PROMPT = (
     "blocker:attacker pairs. Read tool descriptions for full details. If a choice is stale or an action "
     "returns an error, refresh choices and correct it. Never invent card IDs.\n\n"
     "Use pass_priority to wait for your next decision rather than repeatedly polling. The human may "
-    "take time to think; wait patiently. Continue until the bridge reports game_over or player_dead. Do not stop after "
+    "take time to think; wait patiently. Omit until so it stops at playable actions, combat or other choices. "
+    "At an empty ordinary priority prompt, choice=no alone also uses that blocking pass. "
+    "A board_unchanged result references the previous full board by board_reference; all other fields are current. "
+    "If that full board is missing from your context, call get_action_choices to recover it before deciding. "
+    "Continue until the bridge reports game_over or player_dead. Do not stop after "
     "a few moves or concede just to finish. Avoid commentary overhead. Do not supply the human's moves "
     "or look for outside information. In multiplayer, inspect all players and legal targets rather than "
     "assuming there is only one opponent. For Commander, respond to commander selection and command-zone "
@@ -123,6 +127,7 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
         "player_count": request["player_count"],
         "auth": "existing Codex ChatGPT login",
         "api_mode": False,
+        "tool_policy": "gui-efficient-v1",
         "started_at_utc": datetime.now(UTC).isoformat(),
         "usage": [],
     }
@@ -204,7 +209,14 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
             if time.monotonic() > deadline:
                 raise TimeoutError("The table was not started within ten minutes; create a new match")
             time.sleep(1)
-        gateway = GameToolGateway(url, subscription_client.TOOLS, run / "player-tools.jsonl", max_calls=MAX_CALLS)
+        gateway = GameToolGateway(
+            url,
+            subscription_client.TOOLS,
+            run / "player-tools.jsonl",
+            max_calls=MAX_CALLS,
+            optimize_play=True,
+            upstream_timeout=MAX_SECONDS + 30,
+        )
         prompt = PROMPT.format(
             username=request["username"],
             game_type=request["game_type"],
@@ -219,6 +231,7 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
             gateway.url,
             model=request["model"],
             reasoning=request["reasoning"],
+            tool_timeout_seconds=MAX_SECONDS + 60,
         )
         processes.append(agent)
         save_status("playing")
@@ -229,6 +242,8 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
                 raise RuntimeError("The ChatGPT bridge stopped during play")
             if gateway.violations or gateway.call_count > MAX_CALLS:
                 raise RuntimeError("The game tool boundary or call limit was exceeded")
+            if gateway.fatal_error is not None:
+                raise RuntimeError(gateway.fatal_error)
             if time.monotonic() - game_started > MAX_SECONDS:
                 raise TimeoutError("The interactive game exceeded its two-hour limit")
             require_game_only_events(read_complete_events(run / "codex-events.jsonl"))
@@ -260,6 +275,7 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
         if gateway is not None:
             manifest["tool_calls"] = gateway.call_count
             gateway.close()
+            manifest["optimization"] = gateway.optimization_stats()
         events = read_complete_events(run / "codex-events.jsonl")
         manifest["usage"] = [event["usage"] for event in events if event.get("type") == "turn.completed"]
         manifest["total_wall_seconds"] = round(time.monotonic() - started, 3)

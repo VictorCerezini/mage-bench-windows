@@ -41,14 +41,26 @@ def gateway(tmp_path):
         ["get_game_state", "choose_action", "concede"],
         trace,
     )
+    recorded = threading.Event()
+    record_call = proxy.record_call
+
+    def record_and_signal(record):
+        record_call(record)
+        recorded.set()
+
+    proxy.record_call = record_and_signal
 
     def post(method, params=None):
+        recorded.clear()
         request = urllib.request.Request(
             proxy.url,
             data=json.dumps({"id": 1, "method": method, "params": {} if params is None else params}).encode(),
         )
         with urllib.request.urlopen(request, timeout=5) as response:
-            return json.loads(response.read())
+            decoded = json.loads(response.read())
+        if method == "tools/call":
+            assert recorded.wait(timeout=3)
+        return decoded
 
     try:
         yield proxy, post, received, trace
@@ -79,7 +91,9 @@ def test_unlisted_tool_never_reaches_native_bridge_and_allowed_response_is_uncha
     assert allowed["result"] == {"own_hand": ["Island"], "opponent_hand_count": 7}
     assert len(received) == 1
     assert proxy.violations == ["read_file"]
-    assert json.loads(trace.read_text())["tool"] == "get_game_state"
+    records = [json.loads(line) for line in trace.read_text().splitlines()]
+    assert records[0]["outcome"] == "rejected"
+    assert records[1]["tool"] == "get_game_state"
 
 
 def test_call_budget_is_enforced_before_forwarding(gateway):

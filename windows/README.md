@@ -110,6 +110,50 @@ locking and launcher behavior. These launchers start the native Java modules
 directly. Very fast CPU games can finish before the observer attaches; such a
 missing observer completion is a harness failure, not a valid reported win.
 
+## Efficient subscription play
+
+GUI matches use the `gui-efficient-v1` tool policy. Your selected model and
+reasoning stay unchanged. When the model submits `choice=no` alone at an observed
+empty ordinary priority prompt, the gateway sends native `pass_priority` without
+an `until` target. This waits through empty windows and returns for playable
+actions, combat and other decisions. Mulligans, targets, amounts, mana choices,
+combat selections and prompts with listed actions are not rerouted. Nothing is
+automatically conceded, and failed actions are never automatically retried.
+
+Exact repeated boards are replaced by `board_unchanged` and a `board_reference` to
+the previous full board. Changes to rules, life, counters, zones or any other board
+field cause a full board to be sent; new choices, stack, combat and sequence fields
+are always retained. `get_action_choices` requests a full snapshot, ignoring the
+native board cursor, so the model can recover after context compaction. If no
+board is currently available, the next available board is full. Caches belong to
+one gateway/player. Both MCP output representations remain synchronized.
+
+Native and Codex tool waits extend slightly beyond the existing two-hour gameplay
+bound (7,230 and 7,260 seconds), so a human thinking for three minutes does not
+cause a tool timeout. The supervisor still checks table cancellation/window
+closure every half second and stops its owned processes. Codex supports a per-MCP
+tool timeout in its [official configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+The non-GUI pilot retains its native policy and 180-second tool timeout. No harness
+epoch changes: native tools, rules and the stock benchmark's decisions are unchanged;
+GUI policy versions are recorded separately for comparisons.
+
+Player traces now include the requested/effective tool, request ID, terminal
+outcome, latency, upstream response and, when changed, the model-facing response.
+Timeouts/transport failures are recorded without exception text or automatic
+mutation retries. Invalid native data stops the supervisor rather than allowing a
+model recovery loop. The manifest records batched-pass attempts, boards omitted,
+failed calls and response-byte totals. Bytes are not subscription-charge metrics.
+
+On the saved Commander trace, the actual codec reconstructed all 96 successful
+payloads exactly, omitted 28 identical boards, and reduced compact response bytes
+from 960,329 to 725,597 (24.44%). Passing candidates numbered 57, but this fixed-call
+replay does not predict how many native decisions a future blocking pass will skip.
+No model calls were made for that replay. Strategic quality and allowance savings
+remain to be measured in live games. See the [baseline audit](../doc/windows-subscription-usage-audit.md).
+
+Open a fresh GUI game to use the updated worker; no Java rebuild is needed for
+these adapter changes. Close/reopen the fork via its existing shortcut if unsure.
+
 ## Privacy and information boundaries
 
 The source contains no login cache, cookies, refresh/access tokens or API keys.
@@ -148,7 +192,8 @@ fixtures:
 ```
 
 They exercise HTTP filtering, accurate annotations, blocked-tool/call-budget
-enforcement, unaltered allowed responses, credential-environment isolation,
+enforcement, unaltered baseline responses, efficient GUI priority passing and
+lossless board references/recovery, credential-environment isolation,
 subscription-only command configuration, model catalog pagination/privacy,
 model-specific reasoning validation, GUI player startup/cancellation/failure
 cleanup with fake processes, and concurrently appended JSONL traces.

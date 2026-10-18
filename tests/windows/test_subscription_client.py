@@ -49,3 +49,13 @@ def test_gui_selected_model_and_reasoning_reach_the_cli(monkeypatch):
     command = subscription_client.command(model="test-catalog-model", reasoning="high")
     assert command[command.index("--model") + 1] == "test-catalog-model"
     assert 'model_reasoning_effort="high"' in command
+
+
+def test_gui_tool_wait_can_span_the_human_game_without_changing_model_or_effort(monkeypatch):
+    monkeypatch.setattr(paths, "settings", lambda: {"codex_executable": "C:/Tools/codex.exe"})
+    command = subscription_client.command(
+        "http://127.0.0.1:12345/mcp", model="test-model", reasoning="high", tool_timeout_seconds=7260
+    )
+    assert "mcp_servers.mage.tool_timeout_sec=7260" in command
+    assert command[command.index("--model") + 1] == "test-model"
+    assert 'model_reasoning_effort="high"' in command

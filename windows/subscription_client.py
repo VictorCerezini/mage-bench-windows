@@ -38,7 +38,7 @@ def clean_env():
     return env
 
 
-def command(mcp_url=None, *, model=MODEL, reasoning="medium"):
+def command(mcp_url=None, *, model=MODEL, reasoning="medium", tool_timeout_seconds=180):
     codex = paths.settings()["codex_executable"]
     if not codex:
         raise RuntimeError("Run windows/Setup.ps1 with a native Codex executable before subscription play")
@@ -86,7 +86,7 @@ def command(mcp_url=None, *, model=MODEL, reasoning="medium"):
                 "mcp_servers.mage.url": mcp_url,
                 "mcp_servers.mage.required": True,
                 "mcp_servers.mage.enabled_tools": TOOLS,
-                "mcp_servers.mage.tool_timeout_sec": 180,
+                "mcp_servers.mage.tool_timeout_sec": tool_timeout_seconds,
                 "mcp_servers.mage.startup_timeout_sec": 30,
                 "mcp_servers.mage.default_tools_approval_mode": "auto",
             }
@@ -97,9 +97,9 @@ def command(mcp_url=None, *, model=MODEL, reasoning="medium"):
     return cmd
 
 
-def start(prompt, stdout, stderr, mcp_url=None, *, model=MODEL, reasoning="medium"):
+def start(prompt, stdout, stderr, mcp_url=None, *, model=MODEL, reasoning="medium", tool_timeout_seconds=180):
     proc = subprocess.Popen(
-        command(mcp_url, model=model, reasoning=reasoning),
+        command(mcp_url, model=model, reasoning=reasoning, tool_timeout_seconds=tool_timeout_seconds),
         cwd=PLAYER_CWD,
         env=clean_env(),
         stdin=subprocess.PIPE,

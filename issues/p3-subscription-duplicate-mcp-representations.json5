@@ -1,0 +1,14 @@
+{
+  "title": "Determine whether duplicate MCP representations enter model context",
+  "description": "The gui-efficient-v1 adapter now handles repeated boards with explicit references/full recovery and keeps both MCP representations synchronized. The remaining audit question: 96 of 97 historical responses duplicate the same value in text and structuredContent. Establish whether the installed Codex client sends both to the model or selects one before claiming token or quota savings from removing a form. Wire/event duplication alone is insufficient evidence. If both reach the model, validate a compatible single-representation contract using deterministic fixtures and actual client behavior; preserve all player-visible information and all eight tool restrictions. Keep model/effort unchanged. See doc/windows-subscription-usage-audit.md and windows/README.md for measured baseline and completed GUI changes.",
+  "status": "open",
+  "priority": 3,
+  "type": "task",
+  "labels": [
+    "windows",
+    "bridge",
+    "performance"
+  ],
+  "created_at": "2026-10-18T16:38:08Z",
+  "updated_at": "2026-10-18T17:25:54Z"
+}
