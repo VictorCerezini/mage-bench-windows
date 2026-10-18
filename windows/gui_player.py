@@ -261,7 +261,18 @@ def run_player(request, *, start_player=None, runtime=None):
         return 0
     except SessionCancelledError as error:
         manifest["reason"] = str(error)
-        save_status("cancelled")
+        # Closing the window right after the game ends, before the model's closing report, is still a result.
+        bridge_log = run / "bridge.log"
+        terminal_reason = (
+            native_terminal_reason(bridge_log.read_text(encoding="utf-8"), request["username"])
+            if manifest["status"] == "playing" and bridge_log.is_file()
+            else None
+        )
+        if terminal_reason is not None:
+            manifest["terminal_reason"] = terminal_reason
+            save_status("completed")
+        else:
+            save_status("cancelled")
         return 0
     except Exception as error:  # noqa: BLE001 - supervisor records failures and always cleans owned processes
         manifest["error"] = str(error)

@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from windows import claude_client, model_catalog, openrouter_client, subscription_client
+from windows import claude_client, model_catalog, opencode_client, openrouter_client, subscription_client, zai_client
 
 
 @dataclass(frozen=True)
@@ -72,9 +72,22 @@ PROVIDERS = {
             discover=openrouter_client.discover,
             validate_selection=openrouter_client.validate_selection,
             start=openrouter_client.start,
-            require_game_only_events=openrouter_client.require_game_only_events,
-            usage=openrouter_client.usage,
+            require_game_only_events=opencode_client.require_game_only_events,
+            usage=opencode_client.usage,
             failure_reason=openrouter_client.failure_reason,
+        ),
+        Provider(
+            id=zai_client.PROVIDER,
+            label="GLM",
+            auth="Z.ai GLM Coding Plan key in the isolated OpenCode sign-in",
+            events_file="opencode-zai-events.jsonl",
+            stderr_file="opencode-zai-stderr.log",
+            discover=zai_client.discover,
+            validate_selection=zai_client.validate_selection,
+            start=zai_client.start,
+            require_game_only_events=opencode_client.require_game_only_events,
+            usage=opencode_client.usage,
+            failure_reason=zai_client.failure_reason,
         ),
     )
 }

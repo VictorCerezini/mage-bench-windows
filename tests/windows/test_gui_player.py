@@ -42,6 +42,7 @@ def harness(tmp_path, monkeypatch):
                     {"id": "chatgpt_subscription", "models": [{"id": "gpt-6-astra", "efforts": ["medium", "high"]}]},
                     {"id": "claude_subscription", "models": [{"id": "claude-opus-5-5", "efforts": ["medium", "max"]}]},
                     {"id": "openrouter_free", "models": [{"id": "a/alpha:free", "efforts": ["default", "low"]}]},
+                    {"id": "zai_coding_plan", "models": [{"id": "glm-5.3", "efforts": ["default", "max"]}]},
                 ],
                 "unavailable": [],
             }
@@ -318,6 +319,27 @@ def test_openrouter_seat_failure_records_the_cli_reason(harness, monkeypatch):
     assert len(stopped) == 2
 
 
+def test_zai_seat_uses_its_own_trace_and_records_the_plan_limit(harness, monkeypatch):
+    request, runtime, stopped, _ = harness
+    request.update(provider="zai_coding_plan", model="glm-5.3", reasoning="max", username="GLM 2")
+    monkeypatch.setattr(gui_player, "rpc", lambda *_: result({"available": True}))
+
+    def start(_prompt, out, _err, _url, *, model, reasoning, tool_timeout_seconds):
+        assert (model, reasoning) == ("glm-5.3", "max")
+        error = {"type": "error", "error": {"data": {"message": "Usage limit reached for 5 hour."}}}
+        out.write(json.dumps(error) + "\n")
+        out.flush()
+        return SimpleNamespace(poll=lambda: 1, returncode=1)
+
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 1
+    run = Path(request["run"])
+    manifest = json.loads((run / "manifest.json").read_text())
+    assert manifest["provider"] == "zai_coding_plan"
+    assert "5-hour or weekly allowance" in manifest["error"]
+    assert (run / "opencode-zai-events.jsonl").is_file()
+    assert len(stopped) == 2
+
+
 def test_provider_that_was_not_signed_in_is_rejected(harness):
     request, *_ = harness
     Path(request["catalog"]).write_text(json.dumps({"providers": [{"id": "chatgpt_subscription", "models": []}]}))
@@ -350,11 +372,34 @@ def test_table_cancellation_during_a_blocked_player_wait_still_cleans_both_proce
 
     chatgpt = replace(providers.get("chatgpt_subscription"), require_game_only_events=cancel_during_play)
     monkeypatch.setitem(providers.PROVIDERS, "chatgpt_subscription", chatgpt)
+    # This game has no result yet.
+    runtime.launch = lambda *_args, **_kwargs: SimpleNamespace(poll=lambda: None)
     agent = SimpleNamespace(poll=lambda: None)
     start = Mock(return_value=agent)
     assert gui_player.run_player(request, runtime=runtime, start_player=start) == 0
     manifest = json.loads((Path(request["run"]) / "manifest.json").read_text())
     assert manifest["status"] == "cancelled"
+    assert "terminal_reason" not in manifest
     assert manifest["cleanup_complete"] is True
     assert len(stopped) == 2
     start.assert_called_once()
+
+
+def test_closing_the_window_after_the_game_ended_records_the_result(harness, monkeypatch):
+    request, runtime, stopped, _ = harness
+    monkeypatch.setattr(gui_player, "rpc", lambda *_: result({"available": True}))
+    owner_checks = iter([None] * 3)
+
+    def close_after_start(*_):
+        if next(owner_checks, "closed") == "closed":
+            raise gui_player.SessionCancelledError("XMage player window closed")
+
+    monkeypatch.setattr(gui_player, "check_owner", close_after_start)
+    # The harness bridge log already reports the game over; the model is still writing its report.
+    start = Mock(return_value=SimpleNamespace(poll=lambda: None))
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 0
+    manifest = json.loads((Path(request["run"]) / "manifest.json").read_text())
+    assert manifest["status"] == "completed"
+    assert manifest["terminal_reason"] == "game_over"
+    assert manifest["reason"] == "XMage player window closed"
+    assert len(stopped) == 2

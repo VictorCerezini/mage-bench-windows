@@ -1,9 +1,10 @@
-# Windows and ChatGPT/Claude/OpenRouter LLM support
+# Windows and ChatGPT/Claude/OpenRouter/Z.ai LLM support
 
 This fork adds Windows launchers for native Mad controls, ChatGPT-subscription
-and Claude-subscription players, OpenRouter free-model players, and a normal XMage
-GUI seat where a human can play against them. The match configuration GUI adds local
-**ChatGPT subscription**, **Claude subscription** and **OpenRouter free** opponents, with bridge seat selection for multiplayer. The game rules, cards and Mad AI are unchanged. The engine baseline is XMage
+and Claude-subscription players, OpenRouter free-model and Z.ai GLM Coding Plan
+players, and a normal XMage GUI seat where a human can play against them. The match
+configuration GUI adds local **ChatGPT subscription**, **Claude subscription**,
+**OpenRouter free** and **Z.ai GLM Coding Plan** opponents, with bridge seat selection for multiplayer. The game rules, cards and Mad AI are unchanged. The engine baseline is XMage
 1.4.61V1, inherited from Mage-Bench commit
 `370e14523fc49b50b42e8af65557a8875490d800`.
 
@@ -19,9 +20,14 @@ Install JDK 21, Maven, uv, and at least one player CLI:
   OpenRouter API key from <https://openrouter.ai/settings/keys>. Double-click
   `windows/Sign-In-OpenRouter.cmd` and paste the key; it is stored only in
   `.windows-local/opencode-home`, separate from your normal OpenCode setup.
+- **Z.ai GLM Coding Plan**: the same OpenCode CLI and your Coding Plan API key from
+  <https://z.ai/manage-apikey/apikey-list>. Double-click `windows/Sign-In-ZAI.cmd` and
+  paste the key; it is stored next to the OpenRouter one. The plan may only be used
+  within officially supported tools, and OpenCode is one of them.
 
 Subscription limits and actual model access apply. ChatGPT and Claude need no
-developer API key, and their authentication data is never copied.
+developer API key, and their authentication data is never copied. OpenRouter and
+Z.ai keys are read only by the isolated OpenCode player.
 
 From the repository root in PowerShell:
 
@@ -57,7 +63,7 @@ both open the same session), or run:
 
 The visible window is **XMage - LLM subscription matches**. It opens the normal
 **New Table** dialog. Under **Other Players**, choose **ChatGPT subscription** or
-**Claude subscription** or **OpenRouter free**, then select its **Model**,
+**Claude subscription**, **OpenRouter free** or **Z.ai GLM Coding Plan**, then select its **Model**,
 **Reasoning**, and **Deck**.
 Select your own deck in **Player 1 (You)**. Native opponent types, including Mad,
 remain available, and different seats can use different providers.
@@ -90,6 +96,17 @@ once the account has bought at least $10 of credits. Each game tool call is a
 request, so a full game (roughly 70 to 80 calls) does not fit in 50. The launcher
 log shows today's count. Free models may also require allowing free endpoints in
 your OpenRouter privacy settings; check each model's data policy there.
+
+### Z.ai GLM Coding Plan models
+
+The selector offers **GLM-5.3** (default) and **GLM-5.3-Flash**, the models Z.ai
+documents for every plan tier. Z.ai's model list is account-wide rather than per
+plan, and the plan silently routes older IDs (GLM-5.2 and GLM-5.1 to GLM-5.3,
+GLM-4.7 to GLM-5.3-Flash), so those are left out to keep the seat playing as the
+model it shows. Discovery lists the plan endpoint's models to confirm the key works;
+that is not inference and uses no allowance. Effort levels come from OpenCode's
+catalog; **default** leaves the effort to the model. Games count against the plan's
+5-hour and weekly allowances, and Z.ai recommends one concurrent session on Lite.
 
 ### ChatGPT models
 
@@ -240,14 +257,14 @@ supported sign-in cache in place; the launcher never opens, copies or exports it
 Each player invocation forces ChatGPT login and removes provider credential
 overrides from the child environment.
 
-OpenRouter players run `opencode run` from an isolated home under
+OpenRouter and Z.ai players run `opencode run` from an isolated home under
 `.windows-local/opencode-home`: its `HOME`, `USERPROFILE` and XDG folders point
 there, so OpenCode never reads your user profile, your normal OpenCode config or
 sign-ins, skills, or CLAUDE.md. The configuration is passed inline: every built-in
 OpenCode tool is switched off, every permission except the `mage_*` game tools is
-denied, only the OpenRouter provider is enabled, and plugins, instructions,
-sharing and snapshots are off. The key is read only to show the free-request count
-and is sent only to openrouter.ai; it is never written to catalogs or logs. The
+denied, only the seat's provider is enabled, and plugins, instructions, sharing
+and snapshots are off. Each key is sent only to its own provider (openrouter.ai or
+api.z.ai) and is never written to catalogs or logs. The
 supervisor stops the game if the trace shows any non-game tool.
 
 Claude players run `claude -p` with the subscription sign-in Claude Code already
@@ -293,8 +310,8 @@ They exercise HTTP filtering, accurate annotations, blocked-tool/call-budget
 enforcement, unaltered baseline responses, efficient GUI priority passing and
 lossless board references/recovery, credential-environment isolation,
 subscription-only command configuration for both CLIs, Claude sign-in and
-tool-boundary checks, OpenRouter free-model filtering, key privacy and OpenCode
-isolation, multi-provider discovery, model catalog pagination/privacy,
+tool-boundary checks, OpenRouter free-model filtering, the Z.ai documented-model
+list, key privacy and OpenCode isolation, multi-provider discovery, model catalog pagination/privacy,
 model-specific reasoning validation, GUI player startup/cancellation/failure
 cleanup with fake processes, and concurrently appended JSONL traces.
 Setup also runs a Java preferences check. The upstream Python suite remains
