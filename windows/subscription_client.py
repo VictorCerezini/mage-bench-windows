@@ -38,7 +38,7 @@ def clean_env():
     return env
 
 
-def command(mcp_url=None):
+def command(mcp_url=None, *, model=MODEL, reasoning="medium"):
     codex = paths.settings()["codex_executable"]
     if not codex:
         raise RuntimeError("Run windows/Setup.ps1 with a native Codex executable before subscription play")
@@ -54,14 +54,14 @@ def command(mcp_url=None):
         "--sandbox",
         "read-only",
         "--model",
-        MODEL,
+        model,
         "--cd",
         str(PLAYER_CWD),
     ]
     configs = {
         "forced_login_method": "chatgpt",
         "model_provider": "openai",
-        "model_reasoning_effort": "medium",
+        "model_reasoning_effort": reasoning,
         "web_search": "disabled",
         "project_doc_max_bytes": 0,
         "history.persistence": "none",
@@ -97,9 +97,9 @@ def command(mcp_url=None):
     return cmd
 
 
-def start(prompt, stdout, stderr, mcp_url=None):
+def start(prompt, stdout, stderr, mcp_url=None, *, model=MODEL, reasoning="medium"):
     proc = subprocess.Popen(
-        command(mcp_url),
+        command(mcp_url, model=model, reasoning=reasoning),
         cwd=PLAYER_CWD,
         env=clean_env(),
         stdin=subprocess.PIPE,

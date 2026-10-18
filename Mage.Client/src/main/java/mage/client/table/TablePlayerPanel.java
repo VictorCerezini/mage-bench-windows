@@ -5,10 +5,14 @@ import mage.client.SessionHandler;
 import mage.client.util.ClientDefaultSettings;
 import mage.client.util.Event;
 import mage.client.util.Listener;
+import mage.client.util.SubscriptionSupport;
+import mage.client.dialog.PreferencesDialog;
 import mage.players.PlayerType;
 
 import javax.swing.*;
 import java.io.IOException;
+import java.awt.BorderLayout;
+import java.awt.FlowLayout;
 import java.util.UUID;
 
 /**
@@ -17,14 +21,57 @@ import java.util.UUID;
 public class TablePlayerPanel extends javax.swing.JPanel {
 
     protected final PlayerTypeEventSource playerTypeEventSource = new PlayerTypeEventSource();
+    private final JPanel subscriptionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+    private final JComboBox<SubscriptionSupport.Model> modelChoice = new JComboBox<>();
+    private final JComboBox<String> reasoningChoice = new JComboBox<>();
+    private int playerNumber;
 
     public TablePlayerPanel() {
         initComponents();
+        // Keep subscription controls outside the form editor's generated layout.
+        JPanel playerRow = new JPanel(new BorderLayout(8, 0));
+        JPanel typeColumn = new JPanel(new java.awt.GridLayout(2, 1, 0, 3));
+        JPanel typeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        typeRow.add(lbPlayerType);
+        typeRow.add(cbPlayerType);
+        typeColumn.add(lblPlayerNum);
+        typeColumn.add(typeRow);
+        playerRow.add(typeColumn, BorderLayout.WEST);
+        playerRow.add(newPlayerPanel, BorderLayout.CENTER);
+        removeAll();
+        setLayout(new BorderLayout(0, 6));
+        add(playerRow, BorderLayout.CENTER);
+        subscriptionPanel.add(new JLabel("Model:"));
+        modelChoice.setPrototypeDisplayValue(null);
+        modelChoice.setToolTipText("Models available through your signed-in ChatGPT subscription");
+        modelChoice.getAccessibleContext().setAccessibleName("ChatGPT model");
+        reasoningChoice.getAccessibleContext().setAccessibleName("ChatGPT reasoning level");
+        subscriptionPanel.add(modelChoice);
+        subscriptionPanel.add(new JLabel("Reasoning:"));
+        subscriptionPanel.add(reasoningChoice);
+        subscriptionPanel.add(new JLabel("Subscription usage begins when the match starts."));
+        add(subscriptionPanel, BorderLayout.SOUTH);
+        subscriptionPanel.setVisible(false);
+        modelChoice.addActionListener(event -> updateReasoning());
         this.newPlayerPanel.setVisible(false);
     }
 
     public void init(int playerNum, PlayerType playerType, int playerSkill, String playerDeck) {
+        playerNumber = playerNum;
         cbPlayerType.setModel(new DefaultComboBoxModel(SessionHandler.getPlayerTypes()));
+        if (SubscriptionSupport.isConfigured()) {
+            cbPlayerType.addItem(SubscriptionSupport.PLAYER_TYPE);
+            if (modelChoice.getItemCount() == 0) {
+                for (SubscriptionSupport.Model model : SubscriptionSupport.models()) {
+                    modelChoice.addItem(model);
+                }
+                for (SubscriptionSupport.Model model : SubscriptionSupport.models()) {
+                    if (model.isDefault) {
+                        modelChoice.setSelectedItem(model);
+                    }
+                }
+            }
+        }
         this.lblPlayerNum.setText("Player " + playerNum);
         if (ClientDefaultSettings.otherPlayerIndex != null) {
             Integer index = Integer.parseInt(ClientDefaultSettings.otherPlayerIndex);
@@ -46,6 +93,10 @@ public class TablePlayerPanel extends javax.swing.JPanel {
     }
 
     public boolean joinTable(UUID roomId, UUID tableId) throws IOException, ClassNotFoundException {
+        if (isSubscriptionPlayer()) {
+            SubscriptionSupport.start(tableId, playerNumber, getPlayerDeck(), getModel(), getReasoning());
+            return true;
+        }
         if (this.cbPlayerType.getSelectedItem() != PlayerType.HUMAN) {
             return SessionHandler.joinTable(roomId, tableId, this.newPlayerPanel.getPlayerName(), (PlayerType) this.cbPlayerType.getSelectedItem(), this.newPlayerPanel.getSkillLevel(), DeckImporter.importDeckFromFile(this.newPlayerPanel.getDeckFile(), true), "");
         }
@@ -53,7 +104,62 @@ public class TablePlayerPanel extends javax.swing.JPanel {
     }
 
     public PlayerType getPlayerType() {
+        if (isSubscriptionPlayer()) {
+            return PlayerType.HUMAN;
+        }
         return PlayerType.getByDescription(this.cbPlayerType.getSelectedItem().toString());
+    }
+
+    public boolean isSubscriptionPlayer() {
+        return SubscriptionSupport.PLAYER_TYPE.equals(cbPlayerType.getSelectedItem());
+    }
+
+    private SubscriptionSupport.Model getModel() {
+        return (SubscriptionSupport.Model) modelChoice.getSelectedItem();
+    }
+
+    private String getReasoning() {
+        return (String) reasoningChoice.getSelectedItem();
+    }
+
+    private void updateReasoning() {
+        SubscriptionSupport.Model model = getModel();
+        if (model != null) {
+            reasoningChoice.setModel(new DefaultComboBoxModel<>(model.efforts.toArray(new String[0])));
+            reasoningChoice.setSelectedItem(model.defaultEffort);
+        }
+    }
+
+    public void validateSubscription() {
+        SubscriptionSupport.validate(getPlayerDeck(), getModel(), getReasoning());
+    }
+
+    public void saveSubscriptionSettings(String version) {
+        String key = "chatgptSeat" + playerNumber + version;
+        PreferencesDialog.saveValue(key, Boolean.toString(isSubscriptionPlayer()));
+        if (isSubscriptionPlayer()) {
+            PreferencesDialog.saveValue(key + "Model", getModel().id);
+            PreferencesDialog.saveValue(key + "Reasoning", getReasoning());
+        }
+    }
+
+    public void loadSubscriptionSettings(String version) {
+        String key = "chatgptSeat" + playerNumber + version;
+        if (SubscriptionSupport.isConfigured() && Boolean.parseBoolean(PreferencesDialog.getCachedValue(key, "false"))) {
+            String selected = PreferencesDialog.getCachedValue(key + "Model", "");
+            if (!selected.isEmpty()) {
+                SubscriptionSupport.Model model = SubscriptionSupport.models().stream()
+                        .filter(item -> item.id.equals(selected)).findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException("Saved ChatGPT model is unavailable: " + selected));
+                modelChoice.setSelectedItem(model);
+                String effort = PreferencesDialog.getCachedValue(key + "Reasoning", model.defaultEffort);
+                if (!model.efforts.contains(effort)) {
+                    throw new IllegalArgumentException("Saved reasoning level is unavailable: " + effort);
+                }
+                reasoningChoice.setSelectedItem(effort);
+            }
+            cbPlayerType.setSelectedItem(SubscriptionSupport.PLAYER_TYPE);
+        }
     }
 
     public int getPlayerSkill() {
@@ -126,9 +232,15 @@ public class TablePlayerPanel extends javax.swing.JPanel {
     }// </editor-fold>//GEN-END:initComponents
 
     private void cbPlayerTypeActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_cbPlayerTypeActionPerformed
-        if (getPlayerType() != PlayerType.HUMAN) {
+        if (cbPlayerType.getSelectedItem() == null) {
+            return;
+        }
+        subscriptionPanel.setVisible(isSubscriptionPlayer());
+        newPlayerPanel.showLevel(!isSubscriptionPlayer());
+        if (isSubscriptionPlayer() || getPlayerType() != PlayerType.HUMAN) {
             this.newPlayerPanel.setVisible(true);
-            this.newPlayerPanel.setPlayerName(extractAiPlayerNumberFromLabel(this.lblPlayerNum.getText()));
+            this.newPlayerPanel.setPlayerName(isSubscriptionPlayer() ? "ChatGPT " + playerNumber
+                    : extractAiPlayerNumberFromLabel(this.lblPlayerNum.getText()));
         } else {
             this.newPlayerPanel.setVisible(false);
         }

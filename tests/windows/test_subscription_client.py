@@ -42,3 +42,10 @@ def test_provider_credentials_are_removed_only_from_child_environment(monkeypatc
     cleaned = subscription_client.clean_env()
     assert all(name not in cleaned for name in names)
     assert all(os.environ[name] == "test-value-not-a-secret" for name in names)
+
+
+def test_gui_selected_model_and_reasoning_reach_the_cli(monkeypatch):
+    monkeypatch.setattr(paths, "settings", lambda: {"codex_executable": "C:/Tools/codex.exe"})
+    command = subscription_client.command(model="test-catalog-model", reasoning="high")
+    assert command[command.index("--model") + 1] == "test-catalog-model"
+    assert 'model_reasoning_effort="high"' in command

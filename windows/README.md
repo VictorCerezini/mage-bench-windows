@@ -2,8 +2,9 @@
 
 This fork adds Windows launchers for native Mad controls, a ChatGPT-subscription
 player, and a normal XMage GUI seat where a human can play against that player.
-The upstream game rules, cards, Mad AI and bridge source are unchanged by this
-addition. The engine baseline is XMage 1.4.61V1, inherited from Mage-Bench commit
+The match configuration GUI adds a local ChatGPT subscription opponent. The game
+rules, cards, Mad AI and bridge source are unchanged. The engine baseline is XMage
+1.4.61V1, inherited from Mage-Bench commit
 `370e14523fc49b50b42e8af65557a8875490d800`.
 
 ## Setup
@@ -39,17 +40,36 @@ Double-click `windows/Play-vs-ChatGPT.cmd`, or run:
 & .\windows\Play-vs-ChatGPT.ps1
 ```
 
-The visible window is **XMage - You vs ChatGPT**. **You** is the human seat;
-**Astra** is the subscription player. Choose a starting player by clicking a
-portrait, then respond to the mulligan prompt and play normally. Closing the
-window stops the local session. The GUI stays open after game completion until
-closed. Human sessions have no player clock, a two-hour wall bound, and a
-400-tool-call bound. A second launcher invocation detects the running session.
+The visible window is **XMage - ChatGPT subscription matches**. It opens the normal
+**New Table** dialog. Under **Other Players**, choose **ChatGPT subscription**,
+then select its **Model**, **Reasoning**, and **Deck**. Select your own deck in
+**Player 1 (You)**. Native opponent types, including Mad, remain available.
 
-The current starter deck is fixed: 20 Island and 20 Slither Blade, validated as
-an artificial 40-card Limited deck. A deck chooser is not implemented. Card art
-is optional and is not included in Git. The installed Nexus client is separate;
-this does not add an AI entry to Nexus's opponent menu.
+The launcher asks the installed Codex CLI for the models available to its current
+ChatGPT sign-in. Reasoning choices change with the selected model. No model IDs
+or supported effort levels are invented, and an unavailable selection fails
+explicitly. Model discovery uses `account/read` and `model/list` only: it starts
+no thread or inference. See the [official model discovery documentation](https://learn.chatgpt.com/docs/app-server#list-models-modellist).
+
+Click **Create**, wait for **ChatGPT 2** to join, then click **Start**. Opening the
+GUI or creating a table does not consume model inference; the player starts only
+when the game begins. Choose a starting player, respond to the mulligan prompt,
+and play normally. Canceling/leaving the table stops its subscription worker;
+closing the window stops the local session. The GUI stays open after a game.
+Settings saved with the dialog include the selected model and reasoning, but
+Java preferences are process-local and do not survive closing the client.
+
+The initial subscription integration supports an unrated **Two Player Duel**,
+two players, **one win**, and no table password. It defaults to no player clock,
+has a two-hour gameplay wall bound and a 2,000-call bound, and expires an unstarted
+table after ten minutes. Subscription usage limits still apply. A second launcher
+invocation detects the running session.
+
+Both deck fields start with 20 Island and 20 Slither Blade, an artificial 40-card
+Limited deck. Use the deck buttons to choose other files and select their correct
+deck format. The LLM gets no claim about the opponent's deck or starting order.
+Card art is optional and is not included in Git. This menu is in the isolated
+fork; the separately installed Nexus client is unchanged.
 
 Run an LLM versus native Mad pilot and its complementary seat/start-order game:
 
@@ -112,7 +132,9 @@ fixtures:
 
 They exercise HTTP filtering, accurate annotations, blocked-tool/call-budget
 enforcement, unaltered allowed responses, credential-environment isolation,
-subscription-only command configuration and concurrently appended JSONL traces.
+subscription-only command configuration, model catalog pagination/privacy,
+model-specific reasoning validation, GUI player startup/cancellation/failure
+cleanup with fake processes, and concurrently appended JSONL traces.
 Setup also runs a Java preferences check. The upstream Python suite remains
 available through `make test` on its supported environment.
 

@@ -46,6 +46,7 @@ public class NewTableDialog extends MageDialog {
     private UUID playerId;
     private UUID roomId;
     private String lastSessionId;
+    private String settingsVersion = "";
     private final List<TablePlayerPanel> players = new ArrayList<>();
 
     // temp settings on loading players list
@@ -516,7 +517,7 @@ public class NewTableDialog extends MageDialog {
         try {
             // join AI
             for (TablePlayerPanel player : players) {
-                if (player.getPlayerType() != PlayerType.HUMAN) {
+                if (player.isSubscriptionPlayer() || player.getPlayerType() != PlayerType.HUMAN) {
                     if (!player.joinTable(roomId, table.getTableId())) {
                         // error message must be sent by a server
                         SessionHandler.removeTable(roomId, table.getTableId());
@@ -632,6 +633,22 @@ public class NewTableDialog extends MageDialog {
      * @return
      */
     private boolean checkMatchOptions(MatchOptions options) {
+
+        if (players.stream().anyMatch(TablePlayerPanel::isSubscriptionPlayer)) {
+            if (players.size() != 1 || !"Two Player Duel".equals(options.getGameType())
+                    || options.getWinsNeeded() != 1 || options.isRated() || !options.getPassword().isEmpty()) {
+                JOptionPane.showMessageDialog(MageFrame.getDesktop(),
+                        "ChatGPT currently supports an unrated Two Player Duel, two players, one win, and no table password.",
+                        "ChatGPT match", JOptionPane.ERROR_MESSAGE);
+                return false;
+            }
+            try {
+                players.stream().filter(TablePlayerPanel::isSubscriptionPlayer).forEach(TablePlayerPanel::validateSubscription);
+            } catch (IllegalArgumentException error) {
+                JOptionPane.showMessageDialog(MageFrame.getDesktop(), error.getMessage(), "ChatGPT match", JOptionPane.ERROR_MESSAGE);
+                return false;
+            }
+        }
 
         // deck => game
         switch (options.getDeckType()) {
@@ -811,6 +828,7 @@ public class NewTableDialog extends MageDialog {
             }
 
             playerPanel.init(i + 2, playerType, playerSkill, playerDeck);
+            playerPanel.loadSubscriptionSettings(settingsVersion);
         }
 
         drawPlayers();
@@ -896,6 +914,7 @@ public class NewTableDialog extends MageDialog {
 
         // load player data
         // player type
+        settingsVersion = versionStr;
         String playerData = PreferencesDialog.getCachedValue(PreferencesDialog.KEY_NEW_TABLE_PLAYER_TYPES + versionStr, "Human");
         prefPlayerTypes.clear();
         for (String playerTypeStr : playerData.split(PLAYER_DATA_DELIMETER_OLD)) {
@@ -1014,6 +1033,9 @@ public class NewTableDialog extends MageDialog {
 
         // save player data
         // player type
+        for (TablePlayerPanel panel : players) {
+            panel.saveSubscriptionSettings(versionStr);
+        }
         String playerData = players.stream()
                 .map(panel -> panel.getPlayerType().toString())
                 .collect(Collectors.joining(PLAYER_DATA_DELIMETER_OLD));

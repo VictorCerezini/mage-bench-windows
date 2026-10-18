@@ -126,6 +126,7 @@ public final class SessionHandler {
     }
 
     public static void removeTable(UUID roomId, UUID tableId) {
+        mage.client.util.SubscriptionSupport.stop(tableId);
         session.removeTable(roomId, tableId);
     }
 
@@ -166,6 +167,7 @@ public final class SessionHandler {
     }
 
     public static boolean leaveTable(UUID roomId, UUID tableId) {
+        mage.client.util.SubscriptionSupport.stop(tableId);
         return session.leaveTable(roomId, tableId);
     }
 

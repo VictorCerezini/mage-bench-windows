@@ -7,15 +7,15 @@ import re
 import socket
 import subprocess
 import time
-import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 
 from windows import local_smoke as local
 from windows import paths
 from windows import subscription_client as player
-from windows.game_tool_gateway import GameToolGateway, validate_loopback_url
+from windows.game_tool_gateway import GameToolGateway
 from windows.jsonl import read_complete_events
+from windows.mcp_client import rpc
 
 ROOT = paths.LOCAL_ROOT
 WINDOWS = paths.WINDOWS
@@ -46,19 +46,6 @@ PROMPT = (
     "Opponent hand identities and library order must remain unknown. Once the game is terminal, output a "
     "short factual result and stop.\n"
 )
-
-
-def rpc(url, method, params=None, ident=1):
-    validate_loopback_url(url)
-    payload = {"jsonrpc": "2.0", "method": method, "id": ident}
-    if params is not None:
-        payload["params"] = params
-    req = urllib.request.Request(  # noqa: S310 - URL restricted to loopback HTTP above
-        url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}
-    )
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(req, timeout=180) as response:
-        return json.loads(response.read())
 
 
 def launch_human_gui(env, common_arguments, table_id, deck, run, log_file):

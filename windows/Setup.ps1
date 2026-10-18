@@ -46,7 +46,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the GUI dependency classpath.' }
     $classpath = [IO.File]::ReadAllText($classpathFile).Trim()
     $classes = Join-Path $support 'classes'
-    & (Join-Path $JavaHome 'bin/javac.exe') -proc:none -encoding UTF-8 -cp $classpath -d $classes (Join-Path $PSScriptRoot 'java/IsolatedPreferencesFactory.java') (Join-Path $PSScriptRoot 'java/HumanGui.java') (Join-Path $PSScriptRoot 'java/PreferencesProbe.java')
+    & (Join-Path $JavaHome 'bin/javac.exe') -proc:none -encoding UTF-8 -cp $classpath -d $classes (Join-Path $PSScriptRoot 'java/IsolatedPreferencesFactory.java') (Join-Path $PSScriptRoot 'java/HumanGui.java') (Join-Path $PSScriptRoot 'java/MatchGui.java') (Join-Path $PSScriptRoot 'java/PreferencesProbe.java')
     if ($LASTEXITCODE -ne 0) { throw 'Windows Java helper compilation failed.' }
     $preferencesJar = Join-Path $support 'isolated-preferences.jar'
     & (Join-Path $JavaHome 'bin/jar.exe') --create --file $preferencesJar -C $classes 'experiment/IsolatedPreferencesFactory.class' -C $classes 'experiment/IsolatedPreferencesFactory$MemoryPreferences.class'
