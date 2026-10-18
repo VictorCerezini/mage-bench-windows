@@ -2,8 +2,8 @@
 
 This fork adds Windows launchers for native Mad controls, a ChatGPT-subscription
 player, and a normal XMage GUI seat where a human can play against that player.
-The match configuration GUI adds a local ChatGPT subscription opponent. The game
-rules, cards, Mad AI and bridge source are unchanged. The engine baseline is XMage
+The match configuration GUI adds a local ChatGPT subscription opponent, with bridge
+seat selection for multiplayer. The game rules, cards and Mad AI are unchanged. The engine baseline is XMage
 1.4.61V1, inherited from Mage-Bench commit
 `370e14523fc49b50b42e8af65557a8875490d800`.
 
@@ -59,15 +59,32 @@ closing the window stops the local session. The GUI stays open after a game.
 Settings saved with the dialog include the selected model and reasoning, but
 Java preferences are process-local and do not survive closing the client.
 
-The initial subscription integration supports an unrated **Two Player Duel**,
-two players, **one win**, and no table password. It defaults to no player clock,
-has a two-hour gameplay wall bound and a 2,000-call bound, and expires an unstarted
-table after ten minutes. Subscription usage limits still apply. A second launcher
-invocation detects the running session.
+The subscription integration allows the game modes offered by **New Table**,
+including **Commander Two Player Duel** and **Commander Free For All**, with the
+mode's normal player count and deck-format checks. Every model seat has its own
+model, reasoning, deck and bridge; a bridge waits for its configured seat instead
+of racing to take any empty human seat. Canceling the table stops every model
+seat. In multiplayer, a player stops after its own confirmed elimination even
+if other participants are still playing. Opponent hands remain hidden.
+
+Two lifecycle restrictions remain: **Wins must be 1**, because the subscription
+supervisor does not yet handle sideboarding and later games of a match; and the
+**table password must be empty**, because the bridge does not yet send one. The
+error messages identify these separately. These are not restrictions on Commander
+or other game formats. Tournament/draft workflows are separate from New Table
+and have not been integrated with the subscription player.
+
+The launcher defaults to no player clock, has a two-hour gameplay wall bound and
+a 2,000-call bound per model, and expires an unstarted table after ten minutes.
+Subscription usage limits still apply. A second launcher invocation detects the
+running session. Restart an already-open client after updating the build.
 
 Both deck fields start with 20 Island and 20 Slither Blade, an artificial 40-card
 Limited deck. Use the deck buttons to choose other files and select their correct
 deck format. The LLM gets no claim about the opponent's deck or starting order.
+The GUI server explicitly enables normal deck validation, including Commander
+deck construction rules; it does not use the developer build's permissive test
+mode. The artificial Limited starter deck remains valid for its chosen format.
 Card art is optional and is not included in Git. This menu is in the isolated
 fork; the separately installed Nexus client is unchanged.
 
@@ -137,6 +154,19 @@ model-specific reasoning validation, GUI player startup/cancellation/failure
 cleanup with fake processes, and concurrently appended JSONL traces.
 Setup also runs a Java preferences check. The upstream Python suite remains
 available through `make test` on its supported environment.
+
+Java regressions for mode validation, multiplayer seat assignment and cancellation:
+
+```powershell
+mvn -B -pl Mage.Client,Mage.Client.Bridge -Dtest=SubscriptionMatchRulesTest,SubscriptionPlayerRegistryTest,BridgeSeatSelectionTest -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+Native checks on 18 October 2026 reached the first turn of a Commander duel and
+four-player Commander with a repository preconstructed deck, normal deck validation,
+scripted pregame responses, confirmed commander state and hidden opponent hands.
+They made zero model requests and cleaned up their processes. These checks verify
+the connection and pregame interface, not strategic playing strength or every
+card/game-mode combination. The bridge's full 111-test Java suite also passed.
 
 Close the player window and stop any active runner before deleting the checkout
 or `.windows-local`. Retain the user's existing Codex authentication and Nexus

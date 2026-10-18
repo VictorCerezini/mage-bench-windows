@@ -1,0 +1,10 @@
+{
+  "title": "Add sideboarding and multi-game match lifecycle to the subscription GUI player",
+  "description": "The local subscription supervisor runs one Codex turn through one GAME_OVER callback, then cleans up its bridge. BridgeCallbackDispatcher does not handle SIDEBOARD or submit-deck callbacks. Removing the Wins=1 guard would leave a multi-game match without its model seat after the first game. Add explicit sideboard/deck submission tools and keep the seat alive across subsequent START_GAME callbacks, preserving per-game usage/results and stopping at match completion. Regression tests must cover two consecutive games, sideboarding, cancellation between games, and no inference while waiting. Commander and multiplayer game types do not require this lifecycle and are enabled independently.",
+  "status": "open",
+  "priority": 3,
+  "type": "task",
+  "labels": ["windows", "bridge", "puppeteer"],
+  "created_at": "2026-10-18T15:11:11+00:00",
+  "updated_at": "2026-10-18T15:11:11+00:00"
+}

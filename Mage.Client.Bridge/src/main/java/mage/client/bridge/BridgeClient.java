@@ -289,6 +289,7 @@ public class BridgeClient {
 
     private static UUID tryJoinTable(Session session, UUID roomId, String username, DeckCardLists deck, UUID targetTableId) {
         long startTime = System.currentTimeMillis();
+        Integer requestedSeat = getOptionalIntProperty("xmage.bridge.seat");
 
         while (System.currentTimeMillis() - startTime < TABLE_POLL_TIMEOUT_MS) {
             try {
@@ -298,6 +299,9 @@ public class BridgeClient {
                         if (table.getTableState() == TableState.WAITING) {
                             // If a target table is specified, only try that one
                             if (targetTableId != null && !targetTableId.equals(table.getTableId())) {
+                                continue;
+                            }
+                            if (!BridgeSeatSelection.canJoin(table.getSeats(), requestedSeat)) {
                                 continue;
                             }
                             // Check for empty human seats

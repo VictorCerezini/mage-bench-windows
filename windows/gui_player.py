@@ -20,8 +20,9 @@ from windows.mcp_client import rpc
 MAX_CALLS = 2000
 MAX_SECONDS = 7200
 PROMPT = (
-    "You are {username}, playing a live Magic: The Gathering match against a human in the XMage GUI. "
+    "You are {username}, playing a live Magic: The Gathering game with a human and possibly other players in XMage. "
     "Play the entire game to win, using only the mage MCP tools. This is a game, not a coding task. "
+    "Game mode: {game_type}. Deck format: {deck_type}. Number of players: {player_count}. "
     "Your deck was selected in the match configuration. No assumptions about the opponent's deck, "
     "hand, library order, or which player goes first are justified. Use your own player's observations.\n\n"
     "Start with get_action_choices. Inspect get_game_state and oracle text when useful. Choose legal "
@@ -31,9 +32,12 @@ PROMPT = (
     "blocker:attacker pairs. Read tool descriptions for full details. If a choice is stale or an action "
     "returns an error, refresh choices and correct it. Never invent card IDs.\n\n"
     "Use pass_priority to wait for your next decision rather than repeatedly polling. The human may "
-    "take time to think; wait patiently. Continue until the bridge reports game_over. Do not stop after "
+    "take time to think; wait patiently. Continue until the bridge reports game_over or player_dead. Do not stop after "
     "a few moves or concede just to finish. Avoid commentary overhead. Do not supply the human's moves "
-    "or look for outside information. Once the game ends, report the factual result briefly and stop."
+    "or look for outside information. In multiplayer, inspect all players and legal targets rather than "
+    "assuming there is only one opponent. For Commander, respond to commander selection and command-zone "
+    "choices using the legal actions provided. Once your game ends or you are eliminated, report your own "
+    "factual result briefly and stop; other multiplayer participants may still be playing."
 )
 
 
@@ -43,6 +47,8 @@ class SessionCancelledError(Exception):
 
 def validate_request(request):
     UUID(request["table_id"])
+    if not 1 <= int(request["seat"]) <= int(request["player_count"]):
+        raise ValueError("The ChatGPT seat is outside the configured player count")
     if not 1 <= int(request["server_port"]) <= 65535:
         raise ValueError("Invalid local XMage server port")
     if not Path(request["deck"]).is_file():
@@ -88,6 +94,14 @@ def require_game_only_events(events):
             raise RuntimeError("Information boundary violation: the player used a non-game tool")
 
 
+def native_terminal_reason(log_text, username):
+    if f"[{username}] Game over: " in log_text:
+        return "game_over"
+    if f"[{username}] Player death detected from game log" in log_text:
+        return "player_eliminated"
+    return None
+
+
 def run_player(request, *, start_player=subscription_client.start, runtime=None):
     if runtime is None:
         runtime = importlib.import_module("windows.local_smoke")
@@ -103,6 +117,10 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
         "table_id": request["table_id"],
         "model": request["model"],
         "reasoning": request["reasoning"],
+        "seat": request["seat"],
+        "game_type": request["game_type"],
+        "deck_type": request["deck_type"],
+        "player_count": request["player_count"],
         "auth": "existing Codex ChatGPT login",
         "api_mode": False,
         "started_at_utc": datetime.now(UTC).isoformat(),
@@ -136,6 +154,7 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
             "-Dxmage.bridge.server=127.0.0.1",
             f"-Dxmage.bridge.port={request['server_port']}",
             f"-Dxmage.bridge.username={request['username']}",
+            f"-Dxmage.bridge.seat={request['seat']}",
             f"-Dxmage.bridge.deck={Path(request['deck']).as_posix()}",
             f"-Dxmage.bridge.tableId={request['table_id']}",
             f"-Dxmage.bridge.mcpPort={mcp_port}",
@@ -186,7 +205,12 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
                 raise TimeoutError("The table was not started within ten minutes; create a new match")
             time.sleep(1)
         gateway = GameToolGateway(url, subscription_client.TOOLS, run / "player-tools.jsonl", max_calls=MAX_CALLS)
-        prompt = PROMPT.format(username=request["username"])
+        prompt = PROMPT.format(
+            username=request["username"],
+            game_type=request["game_type"],
+            deck_type=request["deck_type"],
+            player_count=request["player_count"],
+        )
         (run / "player-prompt.txt").write_text(prompt, encoding="utf-8")
         agent = start_player(
             prompt,
@@ -212,9 +236,10 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
         trace = read_complete_events(run / "codex-events.jsonl")
         require_game_only_events(trace)
         manifest["usage"] = [event["usage"] for event in trace if event.get("type") == "turn.completed"]
-        native_terminal = "] Game over: " in (run / "bridge.log").read_text(encoding="utf-8")
-        if agent.returncode != 0 or not native_terminal:
+        terminal_reason = native_terminal_reason((run / "bridge.log").read_text(encoding="utf-8"), request["username"])
+        if agent.returncode != 0 or terminal_reason is None:
             raise RuntimeError("ChatGPT stopped before a confirmed game result; see codex-events.jsonl")
+        manifest["terminal_reason"] = terminal_reason
         manifest["game_wall_seconds"] = round(time.monotonic() - game_started, 3)
         save_status("completed")
         return 0

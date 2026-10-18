@@ -44,6 +44,10 @@ def harness(tmp_path, monkeypatch):
         "deck": str(deck),
         "model": "fake-model",
         "reasoning": "high",
+        "seat": 2,
+        "game_type": "Two Player Duel",
+        "deck_type": "Limited",
+        "player_count": 2,
         "owner_pid": os.getpid(),
         "username": "ChatGPT 2",
         "run": str(tmp_path / "run"),
@@ -56,6 +60,7 @@ def harness(tmp_path, monkeypatch):
         proc.poll = lambda: 0
 
     def launch(_module, _env, log, **_kwargs):
+        assert f"-Dxmage.bridge.seat={request['seat']}" in _env["MAVEN_OPTS"]
         log.write("[ChatGPT 2] Game over: fake test result\n")
         log.flush()
         return bridge
@@ -79,8 +84,15 @@ def result(value):
     return {"result": {"content": [{"type": "text", "text": json.dumps(value)}]}}
 
 
-def test_selection_reaches_player_only_after_game_starts(harness, monkeypatch):
+@pytest.mark.parametrize(("players", "seat"), [(2, 2), (4, 3)])
+def test_selection_reaches_player_only_after_game_starts(harness, monkeypatch, players, seat):
     request, runtime, stopped, _ = harness
+    request.update(
+        game_type="Commander Two Player Duel" if players == 2 else "Commander Free For All",
+        deck_type="Variant Magic - Commander",
+        player_count=players,
+        seat=seat,
+    )
     observations = iter([False, False, True])
     waiting = []
 
@@ -97,6 +109,9 @@ def test_selection_reaches_player_only_after_game_starts(harness, monkeypatch):
         assert waiting == [False, False, True]
         assert (model, reasoning) == ("fake-model", "high")
         assert "opponent's deck" in prompt
+        assert request["game_type"] in prompt
+        assert f"Number of players: {players}" in prompt
+        assert "commander selection" in prompt
         out.write(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 2}}) + "\n")
         out.flush()
         return SimpleNamespace(poll=lambda: 0, returncode=0)
@@ -108,6 +123,27 @@ def test_selection_reaches_player_only_after_game_starts(harness, monkeypatch):
     assert manifest["cleanup_complete"] is True
     assert manifest["usage"][0]["input_tokens"] == 10
     assert len(stopped) == 2
+
+
+def test_seat_outside_player_count_is_rejected(harness):
+    request, *_ = harness
+    request["seat"] = 3
+    with pytest.raises(ValueError, match="outside the configured player count"):
+        gui_player.validate_request(request)
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("[ChatGPT 2] Game over: test", "game_over"),
+        ("[ChatGPT 2] Player death detected from game log", "player_eliminated"),
+        ("[ChatGPT 3] Player death detected from game log", None),
+        ("[ChatGPT 2] Zombie game detected: declaring game dead", None),
+        ("[ChatGPT 2] CRITICAL: sendPlayerBoolean failed", None),
+    ],
+)
+def test_only_native_game_end_or_own_elimination_confirms_completion(message, expected):
+    assert gui_player.native_terminal_reason(message, "ChatGPT 2") == expected
 
 
 def test_closing_window_before_start_consumes_no_inference(harness, monkeypatch):

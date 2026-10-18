@@ -8,6 +8,7 @@ import mage.client.util.Listener;
 import mage.client.util.SubscriptionSupport;
 import mage.client.dialog.PreferencesDialog;
 import mage.players.PlayerType;
+import mage.game.match.MatchOptions;
 
 import javax.swing.*;
 import java.io.IOException;
@@ -94,8 +95,7 @@ public class TablePlayerPanel extends javax.swing.JPanel {
 
     public boolean joinTable(UUID roomId, UUID tableId) throws IOException, ClassNotFoundException {
         if (isSubscriptionPlayer()) {
-            SubscriptionSupport.start(tableId, playerNumber, getPlayerDeck(), getModel(), getReasoning());
-            return true;
+            throw new IllegalStateException("Start subscription players after the table owner has joined");
         }
         if (this.cbPlayerType.getSelectedItem() != PlayerType.HUMAN) {
             return SessionHandler.joinTable(roomId, tableId, this.newPlayerPanel.getPlayerName(), (PlayerType) this.cbPlayerType.getSelectedItem(), this.newPlayerPanel.getSkillLevel(), DeckImporter.importDeckFromFile(this.newPlayerPanel.getDeckFile(), true), "");
@@ -112,6 +112,10 @@ public class TablePlayerPanel extends javax.swing.JPanel {
 
     public boolean isSubscriptionPlayer() {
         return SubscriptionSupport.PLAYER_TYPE.equals(cbPlayerType.getSelectedItem());
+    }
+
+    public void startSubscription(UUID tableId, MatchOptions options) throws IOException {
+        SubscriptionSupport.start(tableId, playerNumber, getPlayerDeck(), getModel(), getReasoning(), options);
     }
 
     private SubscriptionSupport.Model getModel() {

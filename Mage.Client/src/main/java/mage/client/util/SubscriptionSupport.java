@@ -3,6 +3,7 @@ package mage.client.util;
 import com.google.gson.Gson;
 import mage.client.MageFrame;
 import mage.client.SessionHandler;
+import mage.game.match.MatchOptions;
 
 import javax.swing.JOptionPane;
 import javax.swing.Timer;
@@ -15,14 +16,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** Local subscription player integration. Authentication stays with the Codex CLI. */
 public final class SubscriptionSupport {
     public static final String PLAYER_TYPE = "ChatGPT subscription";
     private static final Gson JSON = new Gson();
     private static Catalog catalog;
-    private static final Map<UUID, Path> activePlayers = new ConcurrentHashMap<>();
+    private static final SubscriptionPlayerRegistry activePlayers = new SubscriptionPlayerRegistry();
 
     private SubscriptionSupport() {
     }
@@ -83,7 +83,7 @@ public final class SubscriptionSupport {
         }
     }
 
-    public static void start(UUID tableId, int seat, String deck, Model model, String effort) throws IOException {
+    public static void start(UUID tableId, int seat, String deck, Model model, String effort, MatchOptions options) throws IOException {
         validate(deck, model, effort);
         Path run = Path.of(requiredProperty("runs")).resolve(tableId + "-seat-" + seat);
         Files.createDirectories(run);
@@ -93,6 +93,10 @@ public final class SubscriptionSupport {
         request.put("deck", Path.of(deck).toAbsolutePath().toString());
         request.put("model", model.id);
         request.put("reasoning", effort);
+        request.put("seat", seat);
+        request.put("game_type", options.getGameType());
+        request.put("deck_type", options.getDeckType());
+        request.put("player_count", options.getPlayerTypes().size());
         request.put("username", "ChatGPT " + seat);
         request.put("owner_pid", ProcessHandle.current().pid());
         request.put("run", run.toString());
@@ -102,7 +106,7 @@ public final class SubscriptionSupport {
         builder.redirectErrorStream(true);
         builder.redirectOutput(run.resolve("supervisor.log").toFile());
         Process process = builder.start();
-        activePlayers.put(tableId, run);
+        activePlayers.register(tableId, seat, run);
         try (var input = process.getOutputStream()) {
             input.write(JSON.toJson(request).getBytes(StandardCharsets.UTF_8));
         }
@@ -110,7 +114,7 @@ public final class SubscriptionSupport {
         monitor.addActionListener(event -> {
             if (!process.isAlive()) {
                 monitor.stop();
-                activePlayers.remove(tableId);
+                activePlayers.finished(tableId, seat);
                 if (process.exitValue() != 0) {
                     JOptionPane.showMessageDialog(MageFrame.getDesktop(),
                             "The ChatGPT player stopped. Close this table before trying again.\n"
@@ -123,13 +127,10 @@ public final class SubscriptionSupport {
     }
 
     public static void stop(UUID tableId) {
-        Path run = activePlayers.get(tableId);
-        if (run != null) {
-            try {
-                Files.writeString(run.resolve("cancel.requested"), "Table closed", StandardCharsets.UTF_8);
-            } catch (IOException error) {
-                throw new IllegalStateException("Could not stop the ChatGPT player for this table", error);
-            }
+        try {
+            activePlayers.stop(tableId);
+        } catch (IOException error) {
+            throw new IllegalStateException("Could not stop the ChatGPT players for this table", error);
         }
     }
 }

@@ -8,6 +8,7 @@ import mage.client.table.TablePlayerPanel;
 import mage.client.util.Event;
 import mage.client.util.IgnoreList;
 import mage.client.util.Listener;
+import mage.client.util.SubscriptionMatchRules;
 import mage.constants.MatchBufferTime;
 import mage.constants.MatchTimeLimit;
 import mage.constants.MultiplayerAttackOption;
@@ -517,7 +518,7 @@ public class NewTableDialog extends MageDialog {
         try {
             // join AI
             for (TablePlayerPanel player : players) {
-                if (player.isSubscriptionPlayer() || player.getPlayerType() != PlayerType.HUMAN) {
+                if (!player.isSubscriptionPlayer() && player.getPlayerType() != PlayerType.HUMAN) {
                     if (!player.joinTable(roomId, table.getTableId())) {
                         // error message must be sent by a server
                         SessionHandler.removeTable(roomId, table.getTableId());
@@ -535,6 +536,11 @@ public class NewTableDialog extends MageDialog {
                     PlayerType.HUMAN, 1,
                     DeckImporter.importDeckFromFile(this.player1Panel.getDeckFile(), true),
                     this.txtPassword.getText())) {
+                for (TablePlayerPanel player : players) {
+                    if (player.isSubscriptionPlayer()) {
+                        player.startSubscription(table.getTableId(), options);
+                    }
+                }
                 // all fine, can close create dialog (join dialog will be opened after feedback from server)
                 doClose();
                 return;
@@ -595,7 +601,7 @@ public class NewTableDialog extends MageDialog {
     private MatchOptions getMatchOptions() {
         // current settings
         GameTypeView gameType = (GameTypeView) cbGameType.getSelectedItem();
-        MatchOptions options = new MatchOptions(this.txtName.getText(), gameType.getName(), false);
+        MatchOptions options = new MatchOptions(this.txtName.getText(), gameType.getName(), (Integer) spnNumPlayers.getValue() > 2);
         options.getPlayerTypes().add(PlayerType.HUMAN);
         for (TablePlayerPanel player : players) {
             options.getPlayerTypes().add(player.getPlayerType());
@@ -635,14 +641,8 @@ public class NewTableDialog extends MageDialog {
     private boolean checkMatchOptions(MatchOptions options) {
 
         if (players.stream().anyMatch(TablePlayerPanel::isSubscriptionPlayer)) {
-            if (players.size() != 1 || !"Two Player Duel".equals(options.getGameType())
-                    || options.getWinsNeeded() != 1 || options.isRated() || !options.getPassword().isEmpty()) {
-                JOptionPane.showMessageDialog(MageFrame.getDesktop(),
-                        "ChatGPT currently supports an unrated Two Player Duel, two players, one win, and no table password.",
-                        "ChatGPT match", JOptionPane.ERROR_MESSAGE);
-                return false;
-            }
             try {
+                SubscriptionMatchRules.validate(options);
                 players.stream().filter(TablePlayerPanel::isSubscriptionPlayer).forEach(TablePlayerPanel::validateSubscription);
             } catch (IllegalArgumentException error) {
                 JOptionPane.showMessageDialog(MageFrame.getDesktop(), error.getMessage(), "ChatGPT match", JOptionPane.ERROR_MESSAGE);

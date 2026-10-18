@@ -86,7 +86,12 @@ def main():
             common = subprocess.list2cmdline(paths.common_java_arguments())
             server = local.launch(
                 "Mage.Server",
-                env | {"MAVEN_OPTS": f"{common} -Xmx1024m -Dxmage.config.path={config_path.as_posix()}"},
+                env
+                | {
+                    "MAVEN_OPTS": (
+                        f"{common} -Xmx1024m -Dxmage.testMode=false -Dxmage.config.path={config_path.as_posix()}"
+                    )
+                },
                 server_log,
             )
             processes.append(server)
