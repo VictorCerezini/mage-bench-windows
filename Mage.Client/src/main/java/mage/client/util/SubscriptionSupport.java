@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Local subscription player integration. Authentication stays with each provider's CLI (Codex or Claude Code). */
+/** Local subscription player integration. Authentication stays with each provider's CLI (Codex, Claude Code or OpenCode). */
 public final class SubscriptionSupport {
     private static final Gson JSON = new Gson();
     private static Catalog catalog;
@@ -145,12 +145,40 @@ public final class SubscriptionSupport {
                 if (process.exitValue() != 0) {
                     JOptionPane.showMessageDialog(MageFrame.getDesktop(),
                             "The " + provider.playerName + " player stopped. Close this table before trying again.\n"
-                                    + "Details: " + run.resolve("supervisor.log"),
+                                    + failureReason(run) + "Details: " + run.resolve("supervisor.log"),
                             provider.playerName + " player", JOptionPane.ERROR_MESSAGE);
                 }
             }
         });
         monitor.start();
+    }
+
+    /** The supervisor's recorded error, wrapped for a dialog, or empty when there is none. */
+    static String failureReason(Path run) {
+        Object error;
+        try (Reader reader = Files.newBufferedReader(run.resolve("manifest.json"), StandardCharsets.UTF_8)) {
+            Map<?, ?> manifest = JSON.fromJson(reader, Map.class);
+            error = manifest == null ? null : manifest.get("error");
+        } catch (IOException | RuntimeException ignored) {
+            return "";
+        }
+        if (error == null) {
+            return "";
+        }
+        StringBuilder wrapped = new StringBuilder();
+        int lineLength = 0;
+        for (String word : error.toString().split(" ")) {
+            if (lineLength > 0 && lineLength + word.length() > 100) {
+                wrapped.append('\n');
+                lineLength = 0;
+            } else if (lineLength > 0) {
+                wrapped.append(' ');
+                lineLength++;
+            }
+            wrapped.append(word);
+            lineLength += word.length();
+        }
+        return wrapped.append('\n').toString();
     }
 
     public static void stop(UUID tableId) {

@@ -4,6 +4,7 @@ param(
     [string]$MavenRepository,
     [string]$CodexPath,
     [string]$ClaudePath,
+    [string]$OpenCodePath,
     [switch]$CpuOnly,
     [switch]$SkipBuild
 )
@@ -40,10 +41,21 @@ if (-not $CpuOnly -and -not $ClaudePath) {
         }
     }
 }
+if (-not $CpuOnly -and -not $OpenCodePath) {
+    $openCodeCommand = Get-Command opencode -ErrorAction SilentlyContinue
+    if ($openCodeCommand -and [IO.Path]::GetExtension($openCodeCommand.Source) -eq '.exe') {
+        $OpenCodePath = $openCodeCommand.Source
+    } elseif ($openCodeCommand) {
+        # npm installation layout (opencode-ai); other installations must pass -OpenCodePath explicitly.
+        $npmOpenCode = Join-Path (Split-Path -Parent $openCodeCommand.Source) 'node_modules/opencode-ai/bin/opencode.exe'
+        if (Test-Path -LiteralPath $npmOpenCode) { $OpenCodePath = $npmOpenCode }
+    }
+}
 if (-not $CpuOnly) {
-    if (-not $CodexPath -and -not $ClaudePath) { throw 'Install the Codex CLI or Claude Code, or pass -CodexPath / -ClaudePath. Use -CpuOnly for native controls only.' }
+    if (-not $CodexPath -and -not $ClaudePath -and -not $OpenCodePath) { throw 'Install the Codex CLI, Claude Code or OpenCode, or pass -CodexPath / -ClaudePath / -OpenCodePath. Use -CpuOnly for native controls only.' }
     if ($CodexPath) { $CodexPath = (Resolve-Path -LiteralPath $CodexPath).Path }
     if ($ClaudePath) { $ClaudePath = (Resolve-Path -LiteralPath $ClaudePath).Path }
+    if ($OpenCodePath) { $OpenCodePath = (Resolve-Path -LiteralPath $OpenCodePath).Path }
 }
 if (-not $MavenRepository) { $MavenRepository = Join-Path $localRoot 'm2' }
 New-Item -ItemType Directory -Force -Path $support, (Join-Path $support 'classes'), (Join-Path $localRoot 'runtime-home'), (Join-Path $localRoot 'player-sandbox'), $MavenRepository | Out-Null
@@ -71,7 +83,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not package the isolated preferences helper.' }
     & (Join-Path $JavaHome 'bin/java.exe') "-Xbootclasspath/a:$preferencesJar" '-Djava.util.prefs.PreferencesFactory=experiment.IsolatedPreferencesFactory' -cp $classes PreferencesProbe
     if ($LASTEXITCODE -ne 0) { throw 'The preferences isolation check failed.' }
-    $settings = [ordered]@{ java_home=$JavaHome; maven_path=$MavenPath; maven_repository=$MavenRepository; codex_executable=$CodexPath; claude_executable=$ClaudePath }
+    $settings = [ordered]@{ java_home=$JavaHome; maven_path=$MavenPath; maven_repository=$MavenRepository; codex_executable=$CodexPath; claude_executable=$ClaudePath; opencode_executable=$OpenCodePath }
     [IO.File]::WriteAllText((Join-Path $localRoot 'settings.json'), ($settings | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
     Write-Output 'Windows setup ready. Runtime files are ignored under .windows-local. No credentials were copied.'
 } finally { Pop-Location }

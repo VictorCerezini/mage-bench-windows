@@ -55,6 +55,9 @@ def main():
     local.save_json(catalog_path, catalog)
     for entry in catalog["providers"]:
         print(f"{entry['playerType']}: {len(entry['models'])} models; no model turn started", flush=True)
+        if entry.get("freeRequestsToday"):
+            counter = entry["freeRequestsToday"]
+            print(f"OpenRouter free requests today: {counter['used']} used of {counter['limit']}", flush=True)
     for entry in catalog["unavailable"]:
         print(f"{entry['id']} unavailable: {entry['reason']}", flush=True)
     env = subscription_client.clean_env()

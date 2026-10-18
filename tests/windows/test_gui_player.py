@@ -41,6 +41,7 @@ def harness(tmp_path, monkeypatch):
                 "providers": [
                     {"id": "chatgpt_subscription", "models": [{"id": "gpt-6-astra", "efforts": ["medium", "high"]}]},
                     {"id": "claude_subscription", "models": [{"id": "claude-opus-5-5", "efforts": ["medium", "max"]}]},
+                    {"id": "openrouter_free", "models": [{"id": "a/alpha:free", "efforts": ["default", "low"]}]},
                 ],
                 "unavailable": [],
             }
@@ -254,6 +255,66 @@ def test_claude_seat_rejects_a_non_game_tool_during_play(harness, monkeypatch):
     manifest = json.loads((Path(request["run"]) / "manifest.json").read_text())
     assert "boundary" in manifest["error"]
     assert manifest["cleanup_complete"] is True
+    assert len(stopped) == 2
+
+
+def test_openrouter_seat_uses_opencode_trace_and_usage(harness, monkeypatch):
+    request, runtime, stopped, _ = harness
+    request.update(provider="openrouter_free", model="a/alpha:free", reasoning="default", username="OpenRouter 2")
+    monkeypatch.setattr(gui_player, "rpc", lambda *_: result({"available": True}))
+
+    def start(_prompt, out, _err, _url, *, model, reasoning, tool_timeout_seconds):
+        assert (model, reasoning) == ("a/alpha:free", "default")
+        tool = {"type": "tool", "tool": "mage_pass_priority", "state": {"status": "completed"}}
+        step = {"type": "step-finish", "tokens": {"input": 7, "output": 1, "reasoning": 0, "cache": {"read": 0}}}
+        out.write(json.dumps({"type": "tool_use", "part": tool}) + "\n")
+        out.write(json.dumps({"type": "step_finish", "part": step}) + "\n")
+        out.flush()
+        return SimpleNamespace(poll=lambda: 0, returncode=0)
+
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 0
+    run = Path(request["run"])
+    manifest = json.loads((run / "manifest.json").read_text())
+    assert manifest["status"] == "completed"
+    assert manifest["provider"] == "openrouter_free"
+    assert manifest["usage"][0]["input"] == 7
+    assert (run / "opencode-events.jsonl").is_file()
+    assert len(stopped) == 2
+
+
+def test_openrouter_seat_rejects_a_non_game_tool_during_play(harness, monkeypatch):
+    request, runtime, stopped, _ = harness
+    request.update(provider="openrouter_free", model="a/alpha:free", reasoning="low", username="OpenRouter 2")
+    monkeypatch.setattr(gui_player, "rpc", lambda *_: result({"available": True}))
+
+    def start(_prompt, out, *_args, **_kwargs):
+        event = {"type": "tool_use", "part": {"type": "tool", "tool": "read", "state": {"status": "error"}}}
+        out.write(json.dumps(event) + "\n")
+        out.flush()
+        return SimpleNamespace(poll=lambda: None)
+
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 1
+    manifest = json.loads((Path(request["run"]) / "manifest.json").read_text())
+    assert "boundary" in manifest["error"]
+    assert manifest["cleanup_complete"] is True
+    assert len(stopped) == 2
+
+
+def test_openrouter_seat_failure_records_the_cli_reason(harness, monkeypatch):
+    request, runtime, stopped, _ = harness
+    request.update(provider="openrouter_free", model="a/alpha:free", reasoning="default", username="OpenRouter 2")
+    monkeypatch.setattr(gui_player, "rpc", lambda *_: result({"available": True}))
+
+    def start(_prompt, out, *_args, **_kwargs):
+        error = {"type": "error", "error": {"data": {"message": "a/alpha:free is temporarily rate-limited upstream."}}}
+        out.write(json.dumps(error) + "\n")
+        out.flush()
+        return SimpleNamespace(poll=lambda: 1, returncode=1)
+
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 1
+    manifest = json.loads((Path(request["run"]) / "manifest.json").read_text())
+    assert "rate-limited upstream" in manifest["error"]
+    assert "choose another free model" in manifest["error"]
     assert len(stopped) == 2
 
 

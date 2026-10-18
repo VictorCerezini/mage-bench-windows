@@ -172,18 +172,15 @@ public class TablePlayerPanel extends javax.swing.JPanel {
                 provider = SubscriptionSupport.providers().get(0);
             }
             cbPlayerType.setSelectedItem(provider);
+            // Free model lists rotate, so a saved model or level that is gone keeps the provider's defaults.
             String selected = savedProvider ? PreferencesDialog.getCachedValue(key + "Model", "") : "";
-            if (!selected.isEmpty()) {
-                SubscriptionSupport.Model model = provider.models.stream()
-                        .filter(item -> item.id.equals(selected)).findFirst()
-                        .orElseThrow(() -> new IllegalArgumentException("Saved subscription model is unavailable: " + selected));
+            provider.models.stream().filter(item -> item.id.equals(selected)).findFirst().ifPresent(model -> {
                 modelChoice.setSelectedItem(model);
                 String effort = PreferencesDialog.getCachedValue(key + "Reasoning", model.defaultEffort);
-                if (!model.efforts.contains(effort)) {
-                    throw new IllegalArgumentException("Saved reasoning level is unavailable: " + effort);
+                if (model.efforts.contains(effort)) {
+                    reasoningChoice.setSelectedItem(effort);
                 }
-                reasoningChoice.setSelectedItem(effort);
-            }
+            });
         }
     }
 

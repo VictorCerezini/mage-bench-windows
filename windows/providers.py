@@ -1,9 +1,9 @@
-"""Subscription CLIs that can drive a GUI seat; each keeps authentication inside its own CLI."""
+"""CLIs that can drive a GUI seat; each keeps authentication inside its own CLI or isolated sign-in."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from windows import claude_client, model_catalog, subscription_client
+from windows import claude_client, model_catalog, openrouter_client, subscription_client
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,8 @@ class Provider:
     start: Callable
     require_game_only_events: Callable
     usage: Callable
+    # The CLI's own explanation when a game stops early, or None when the trace has none.
+    failure_reason: Callable = lambda _events: None
 
 
 def codex_usage(events):
@@ -60,6 +62,19 @@ PROVIDERS = {
             start=claude_client.start,
             require_game_only_events=claude_client.require_game_only_events,
             usage=claude_client.usage,
+        ),
+        Provider(
+            id=openrouter_client.PROVIDER,
+            label="OpenRouter",
+            auth="OpenRouter key in the isolated OpenCode sign-in",
+            events_file="opencode-events.jsonl",
+            stderr_file="opencode-stderr.log",
+            discover=openrouter_client.discover,
+            validate_selection=openrouter_client.validate_selection,
+            start=openrouter_client.start,
+            require_game_only_events=openrouter_client.require_game_only_events,
+            usage=openrouter_client.usage,
+            failure_reason=openrouter_client.failure_reason,
         ),
     )
 }

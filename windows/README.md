@@ -1,23 +1,27 @@
-# Windows and ChatGPT/Claude subscription support
+# Windows and ChatGPT/Claude/OpenRouter LLM support
 
 This fork adds Windows launchers for native Mad controls, ChatGPT-subscription
-and Claude-subscription players, and a normal XMage GUI seat where a human can
-play against them. The match configuration GUI adds local **ChatGPT subscription**
-and **Claude subscription** opponents, with bridge seat selection for multiplayer. The game rules, cards and Mad AI are unchanged. The engine baseline is XMage
+and Claude-subscription players, OpenRouter free-model players, and a normal XMage
+GUI seat where a human can play against them. The match configuration GUI adds local
+**ChatGPT subscription**, **Claude subscription** and **OpenRouter free** opponents, with bridge seat selection for multiplayer. The game rules, cards and Mad AI are unchanged. The engine baseline is XMage
 1.4.61V1, inherited from Mage-Bench commit
 `370e14523fc49b50b42e8af65557a8875490d800`.
 
 ## Setup
 
-Install JDK 21, Maven, uv, and at least one subscription CLI:
+Install JDK 21, Maven, uv, and at least one player CLI:
 
 - **ChatGPT**: the Codex CLI with its supported ChatGPT sign-in (`codex login`).
 - **Claude**: Claude Code with its supported Claude subscription sign-in
   (`claude auth login --claudeai`, choosing your Claude Pro/Max account, not an API key).
   Double-click `windows/Sign-In-Claude.cmd` to do this with the configured CLI.
+- **OpenRouter free models**: the OpenCode CLI (`npm install -g opencode-ai`) and an
+  OpenRouter API key from <https://openrouter.ai/settings/keys>. Double-click
+  `windows/Sign-In-OpenRouter.cmd` and paste the key; it is stored only in
+  `.windows-local/opencode-home`, separate from your normal OpenCode setup.
 
-Subscription limits and actual model access apply. Neither requires a developer
-API key, and no authentication data is copied.
+Subscription limits and actual model access apply. ChatGPT and Claude need no
+developer API key, and their authentication data is never copied.
 
 From the repository root in PowerShell:
 
@@ -29,8 +33,9 @@ From the repository root in PowerShell:
 Windows `codex.exe`; npm's standard Windows layout is also recognized.
 `-ClaudePath` can select `claude.exe`; otherwise `claude.exe` on `PATH` is used,
 then the copy bundled with the Claude desktop app (its versioned folder moves when
-the app updates, so rerun Setup afterwards). Setup needs at least one of the two
-CLIs. `-CpuOnly` prepares native controls without requiring either. Setup builds the
+the app updates, so rerun Setup afterwards). `-OpenCodePath` can select
+`opencode.exe`; npm's `opencode-ai` layout is also recognized. Setup needs at least
+one of the three CLIs. `-CpuOnly` prepares native controls without requiring either. Setup builds the
 Java modules and separate Java GUI/preferences helpers. `-SkipBuild` reuses an
 already-built checkout and Python environment. `-MavenRepository` selects an
 existing dependency cache; otherwise setup uses `.windows-local/m2`.
@@ -52,7 +57,8 @@ both open the same session), or run:
 
 The visible window is **XMage - LLM subscription matches**. It opens the normal
 **New Table** dialog. Under **Other Players**, choose **ChatGPT subscription** or
-**Claude subscription**, then select its **Model**, **Reasoning**, and **Deck**.
+**Claude subscription** or **OpenRouter free**, then select its **Model**,
+**Reasoning**, and **Deck**.
 Select your own deck in **Player 1 (You)**. Native opponent types, including Mad,
 remain available, and different seats can use different providers.
 
@@ -68,6 +74,22 @@ is signed in with a Claude subscription (`claude auth status`); it starts no
 inference. The selected model ID is passed verbatim and model-access fallback is
 disabled, so a model your plan cannot use fails at game start instead of silently
 playing as another model. Higher effort uses more of your subscription allowance.
+
+### OpenRouter free models
+
+OpenRouter's free models change often, so every launch asks OpenRouter for the
+models that are free right now and support tool calls, and offers those. The free
+router (`openrouter/free`) is left out because it switches models between requests.
+Reasoning choices come from OpenCode's refreshed model catalog; **default** leaves
+the effort to the model, and a model OpenCode does not know yet offers only that.
+A seat saved with a model that has since left the free list falls back to the
+first listed model.
+
+OpenRouter limits free models to 20 requests a minute and 50 a day, or 1,000 a day
+once the account has bought at least $10 of credits. Each game tool call is a
+request, so a full game (roughly 70 to 80 calls) does not fit in 50. The launcher
+log shows today's count. Free models may also require allowing free endpoints in
+your OpenRouter privacy settings; check each model's data policy there.
 
 ### ChatGPT models
 
@@ -218,6 +240,16 @@ supported sign-in cache in place; the launcher never opens, copies or exports it
 Each player invocation forces ChatGPT login and removes provider credential
 overrides from the child environment.
 
+OpenRouter players run `opencode run` from an isolated home under
+`.windows-local/opencode-home`: its `HOME`, `USERPROFILE` and XDG folders point
+there, so OpenCode never reads your user profile, your normal OpenCode config or
+sign-ins, skills, or CLAUDE.md. The configuration is passed inline: every built-in
+OpenCode tool is switched off, every permission except the `mage_*` game tools is
+denied, only the OpenRouter provider is enabled, and plugins, instructions,
+sharing and snapshots are off. The key is read only to show the free-request count
+and is sent only to openrouter.ai; it is never written to catalogs or logs. The
+supervisor stops the game if the trace shows any non-game tool.
+
 Claude players run `claude -p` with the subscription sign-in Claude Code already
 stores; the launcher reads only the `loggedIn`, `authMethod` and `apiProvider`
 fields of `claude auth status` and never saves the email or organization it also
@@ -261,7 +293,8 @@ They exercise HTTP filtering, accurate annotations, blocked-tool/call-budget
 enforcement, unaltered baseline responses, efficient GUI priority passing and
 lossless board references/recovery, credential-environment isolation,
 subscription-only command configuration for both CLIs, Claude sign-in and
-tool-boundary checks, multi-provider discovery, model catalog pagination/privacy,
+tool-boundary checks, OpenRouter free-model filtering, key privacy and OpenCode
+isolation, multi-provider discovery, model catalog pagination/privacy,
 model-specific reasoning validation, GUI player startup/cancellation/failure
 cleanup with fake processes, and concurrently appended JSONL traces.
 Setup also runs a Java preferences check. The upstream Python suite remains

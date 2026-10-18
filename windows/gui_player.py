@@ -253,7 +253,8 @@ def run_player(request, *, start_player=None, runtime=None):
         manifest["usage"] = provider.usage(trace)
         terminal_reason = native_terminal_reason((run / "bridge.log").read_text(encoding="utf-8"), request["username"])
         if agent.returncode != 0 or terminal_reason is None:
-            raise RuntimeError(f"{provider.label} stopped before a confirmed game result; see {provider.events_file}")
+            reason = provider.failure_reason(trace) or f"see {provider.events_file}"
+            raise RuntimeError(f"{provider.label} stopped before a confirmed game result: {reason}")
         manifest["terminal_reason"] = terminal_reason
         manifest["game_wall_seconds"] = round(time.monotonic() - game_started, 3)
         save_status("completed")

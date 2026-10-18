@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SubscriptionSupportTest {
     @TempDir
@@ -43,5 +44,18 @@ class SubscriptionSupportTest {
         } finally {
             System.clearProperty("xmage.subscription.catalog");
         }
+    }
+
+    @Test
+    void stoppedPlayerDialogShowsTheRecordedReasonWrapped() throws Exception {
+        assertEquals("", SubscriptionSupport.failureReason(folder));
+        String reason = "OpenRouter stopped before a confirmed game result: [Google AI Studio] model is temporarily"
+                + " rate-limited upstream. Free models are often busy: choose another free model, or try again later.";
+        Files.writeString(folder.resolve("manifest.json"), "{\"status\": \"failed\", \"error\": \"" + reason + "\"}",
+                StandardCharsets.UTF_8);
+        String shown = SubscriptionSupport.failureReason(folder);
+        assertEquals(reason, shown.replace('\n', ' ').trim());
+        assertTrue(shown.lines().allMatch(line -> line.length() <= 100));
+        assertTrue(shown.endsWith("\n"));
     }
 }
