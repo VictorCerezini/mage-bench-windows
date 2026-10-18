@@ -3,6 +3,7 @@ param(
     [string]$MavenPath,
     [string]$MavenRepository,
     [string]$CodexPath,
+    [string]$ClaudePath,
     [switch]$CpuOnly,
     [switch]$SkipBuild
 )
@@ -18,15 +19,32 @@ foreach ($tool in @('java.exe', 'javac.exe', 'jar.exe')) {
 if (-not $MavenPath) { $MavenPath = (Get-Command mvn.cmd -ErrorAction Stop).Source }
 $MavenPath = (Resolve-Path -LiteralPath $MavenPath).Path
 if (-not $CpuOnly -and -not $CodexPath) {
-    $codexCommand = Get-Command codex -ErrorAction Stop
-    if ([IO.Path]::GetExtension($codexCommand.Source) -eq '.exe') {
+    $codexCommand = Get-Command codex -ErrorAction SilentlyContinue
+    if ($codexCommand -and [IO.Path]::GetExtension($codexCommand.Source) -eq '.exe') {
         $CodexPath = $codexCommand.Source
-    } else {
+    } elseif ($codexCommand) {
         # Supported npm installation layout; other installations must pass -CodexPath explicitly.
         $CodexPath = Join-Path (Split-Path -Parent $codexCommand.Source) 'node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe'
     }
 }
-if (-not $CpuOnly) { $CodexPath = (Resolve-Path -LiteralPath $CodexPath).Path }
+if (-not $CpuOnly -and -not $ClaudePath) {
+    $claudeCommand = Get-Command claude.exe -ErrorAction SilentlyContinue
+    if ($claudeCommand) {
+        $ClaudePath = $claudeCommand.Source
+    } else {
+        # The Claude desktop app bundles Claude Code in a versioned folder that moves when the app updates.
+        $bundled = Get-ChildItem -Path (Join-Path $env:APPDATA 'Claude/claude-code/*/*/claude.exe') -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($bundled) {
+            $ClaudePath = $bundled.FullName
+            Write-Warning "Using the Claude desktop app's bundled Claude Code ($ClaudePath). Rerun Setup after the app updates, or install the standalone CLI and pass -ClaudePath."
+        }
+    }
+}
+if (-not $CpuOnly) {
+    if (-not $CodexPath -and -not $ClaudePath) { throw 'Install the Codex CLI or Claude Code, or pass -CodexPath / -ClaudePath. Use -CpuOnly for native controls only.' }
+    if ($CodexPath) { $CodexPath = (Resolve-Path -LiteralPath $CodexPath).Path }
+    if ($ClaudePath) { $ClaudePath = (Resolve-Path -LiteralPath $ClaudePath).Path }
+}
 if (-not $MavenRepository) { $MavenRepository = Join-Path $localRoot 'm2' }
 New-Item -ItemType Directory -Force -Path $support, (Join-Path $support 'classes'), (Join-Path $localRoot 'runtime-home'), (Join-Path $localRoot 'player-sandbox'), $MavenRepository | Out-Null
 $MavenRepository = (Resolve-Path -LiteralPath $MavenRepository).Path
@@ -53,7 +71,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not package the isolated preferences helper.' }
     & (Join-Path $JavaHome 'bin/java.exe') "-Xbootclasspath/a:$preferencesJar" '-Djava.util.prefs.PreferencesFactory=experiment.IsolatedPreferencesFactory' -cp $classes PreferencesProbe
     if ($LASTEXITCODE -ne 0) { throw 'The preferences isolation check failed.' }
-    $settings = [ordered]@{ java_home=$JavaHome; maven_path=$MavenPath; maven_repository=$MavenRepository; codex_executable=$CodexPath }
+    $settings = [ordered]@{ java_home=$JavaHome; maven_path=$MavenPath; maven_repository=$MavenRepository; codex_executable=$CodexPath; claude_executable=$ClaudePath }
     [IO.File]::WriteAllText((Join-Path $localRoot 'settings.json'), ($settings | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
     Write-Output 'Windows setup ready. Runtime files are ignored under .windows-local. No credentials were copied.'
 } finally { Pop-Location }

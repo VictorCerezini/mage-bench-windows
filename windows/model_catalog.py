@@ -114,7 +114,13 @@ def read_catalog(call):
         seen.add(cursor)
     if not models:
         raise RuntimeError("No GPT-6 Astra, GPT-6 Luna or GPT-6.1 Sol model is available through this ChatGPT sign-in")
-    return {"provider": "chatgpt_subscription", "models": models}
+    return {
+        "id": "chatgpt_subscription",
+        "playerType": "ChatGPT subscription",
+        "playerName": "ChatGPT",
+        "auth": "existing Codex ChatGPT login",
+        "models": models,
+    }
 
 
 def discover():

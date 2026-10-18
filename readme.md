@@ -1,6 +1,6 @@
 # mage-bench
 
-This fork includes [Windows launchers and ChatGPT subscription play](windows/README.md),
+This fork includes [Windows launchers and ChatGPT or Claude subscription play](windows/README.md),
 including a normal XMage GUI seat for playing against the subscription model.
 
 **[mage-bench.com](https://mage-bench.com/)**

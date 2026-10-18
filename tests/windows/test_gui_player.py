@@ -2,13 +2,14 @@
 
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
-from windows import gui_player
+from windows import claude_client, gui_player, providers
 
 
 class FakeSocket:
@@ -34,7 +35,17 @@ class FakeSocket:
 @pytest.fixture
 def harness(tmp_path, monkeypatch):
     catalog = tmp_path / "catalog.json"
-    catalog.write_text(json.dumps({"models": [{"id": "gpt-6-astra", "efforts": ["medium", "high"]}]}))
+    catalog.write_text(
+        json.dumps(
+            {
+                "providers": [
+                    {"id": "chatgpt_subscription", "models": [{"id": "gpt-6-astra", "efforts": ["medium", "high"]}]},
+                    {"id": "claude_subscription", "models": [{"id": "claude-opus-5-5", "efforts": ["medium", "max"]}]},
+                ],
+                "unavailable": [],
+            }
+        )
+    )
     deck = tmp_path / "deck.dck"
     deck.write_text("40 Island\n")
     request = {
@@ -61,7 +72,7 @@ def harness(tmp_path, monkeypatch):
 
     def launch(_module, _env, log, **_kwargs):
         assert f"-Dxmage.bridge.seat={request['seat']}" in _env["MAVEN_OPTS"]
-        log.write("[ChatGPT 2] Game over: fake test result\n")
+        log.write(f"[{request['username']}] Game over: fake test result\n")
         log.flush()
         return bridge
 
@@ -198,7 +209,60 @@ def test_early_player_exit_is_failure_and_cleans_processes(harness, monkeypatch)
 @pytest.mark.parametrize("kind", ["command_execution", "file_change", "web_search"])
 def test_non_game_tools_are_rejected(kind):
     with pytest.raises(RuntimeError, match="boundary"):
-        gui_player.require_game_only_events([{"type": "item.completed", "item": {"type": kind}}])
+        providers.get("chatgpt_subscription").require_game_only_events(
+            [{"type": "item.completed", "item": {"type": kind}}]
+        )
+
+
+def test_claude_seat_uses_its_own_cli_trace_and_usage(harness, monkeypatch):
+    request, runtime, stopped, _ = harness
+    request.update(provider="claude_subscription", model="claude-opus-5-5", reasoning="max", username="Claude 2")
+    monkeypatch.setattr(gui_player, "rpc", lambda *_: result({"available": True}))
+
+    def start(prompt, out, _err, _url, *, model, reasoning, tool_timeout_seconds):
+        assert (model, reasoning) == ("claude-opus-5-5", "max")
+        assert "opponent's deck" in prompt
+        out.write(json.dumps({"type": "system", "subtype": "init", "tools": claude_client.MCP_TOOLS}) + "\n")
+        out.write(json.dumps({"type": "result", "num_turns": 4, "usage": {"input_tokens": 7}}) + "\n")
+        out.flush()
+        return SimpleNamespace(poll=lambda: 0, returncode=0)
+
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 0
+    run = Path(request["run"])
+    manifest = json.loads((run / "manifest.json").read_text())
+    assert manifest["status"] == "completed"
+    assert manifest["provider"] == "claude_subscription"
+    assert manifest["auth"] == "existing Claude Code subscription login"
+    assert manifest["usage"][0]["input_tokens"] == 7
+    assert (run / "claude-events.jsonl").is_file()
+    assert not (run / "codex-events.jsonl").exists()
+    assert len(stopped) == 2
+
+
+def test_claude_seat_rejects_a_non_game_tool_during_play(harness, monkeypatch):
+    request, runtime, stopped, _ = harness
+    request.update(provider="claude_subscription", model="claude-opus-5-5", reasoning="medium", username="Claude 2")
+    monkeypatch.setattr(gui_player, "rpc", lambda *_: result({"available": True}))
+
+    def start(_prompt, out, *_args, **_kwargs):
+        event = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash"}]}}
+        out.write(json.dumps(event) + "\n")
+        out.flush()
+        return SimpleNamespace(poll=lambda: None)
+
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 1
+    manifest = json.loads((Path(request["run"]) / "manifest.json").read_text())
+    assert "boundary" in manifest["error"]
+    assert manifest["cleanup_complete"] is True
+    assert len(stopped) == 2
+
+
+def test_provider_that_was_not_signed_in_is_rejected(harness):
+    request, *_ = harness
+    Path(request["catalog"]).write_text(json.dumps({"providers": [{"id": "chatgpt_subscription", "models": []}]}))
+    request.update(provider="claude_subscription", model="claude-opus-5-5", reasoning="medium")
+    with pytest.raises(ValueError, match="not signed in"):
+        gui_player.validate_request(request)
 
 
 def test_table_cancellation_stops_player_even_when_window_remains_open(harness):
@@ -223,7 +287,8 @@ def test_table_cancellation_during_a_blocked_player_wait_still_cleans_both_proce
     def cancel_during_play(_events):
         (Path(request["run"]) / "cancel.requested").write_text("Table closed during human wait")
 
-    monkeypatch.setattr(gui_player, "require_game_only_events", cancel_during_play)
+    chatgpt = replace(providers.get("chatgpt_subscription"), require_game_only_events=cancel_during_play)
+    monkeypatch.setitem(providers.PROVIDERS, "chatgpt_subscription", chatgpt)
     agent = SimpleNamespace(poll=lambda: None)
     start = Mock(return_value=agent)
     assert gui_player.run_player(request, runtime=runtime, start_player=start) == 0

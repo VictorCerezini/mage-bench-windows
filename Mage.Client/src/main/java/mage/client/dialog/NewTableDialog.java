@@ -645,7 +645,7 @@ public class NewTableDialog extends MageDialog {
                 SubscriptionMatchRules.validate(options);
                 players.stream().filter(TablePlayerPanel::isSubscriptionPlayer).forEach(TablePlayerPanel::validateSubscription);
             } catch (IllegalArgumentException error) {
-                JOptionPane.showMessageDialog(MageFrame.getDesktop(), error.getMessage(), "ChatGPT match", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(MageFrame.getDesktop(), error.getMessage(), "Subscription match", JOptionPane.ERROR_MESSAGE);
                 return false;
             }
         }

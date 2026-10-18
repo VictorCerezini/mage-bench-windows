@@ -1,4 +1,4 @@
-"""Join one GUI-selected table and drive only its ChatGPT seat."""
+"""Join one GUI-selected table and drive only its subscription model seat."""
 
 import importlib
 import json
@@ -12,7 +12,7 @@ from uuid import UUID
 
 import psutil
 
-from windows import model_catalog, paths, subscription_client
+from windows import paths, providers, subscription_client
 from windows.game_tool_gateway import GameToolGateway
 from windows.jsonl import read_complete_events
 from windows.mcp_client import rpc
@@ -49,16 +49,22 @@ class SessionCancelledError(Exception):
     """The owning player window closed; this is not a model loss or harness failure."""
 
 
+def request_provider(request):
+    # Requests from clients built before Claude support carry no provider and mean ChatGPT.
+    return providers.get(request.get("provider", "chatgpt_subscription"))
+
+
 def validate_request(request):
+    provider = request_provider(request)
     UUID(request["table_id"])
     if not 1 <= int(request["seat"]) <= int(request["player_count"]):
-        raise ValueError("The ChatGPT seat is outside the configured player count")
+        raise ValueError(f"The {provider.label} seat is outside the configured player count")
     if not 1 <= int(request["server_port"]) <= 65535:
         raise ValueError("Invalid local XMage server port")
     if not Path(request["deck"]).is_file():
-        raise ValueError("The selected ChatGPT deck file does not exist")
+        raise ValueError(f"The selected {provider.label} deck file does not exist")
     catalog = json.loads(Path(request["catalog"]).read_text(encoding="utf-8"))
-    model_catalog.validate_selection(catalog, request["model"], request["reasoning"])
+    provider.validate_selection(providers.catalog_entry(catalog, provider.id), request["model"], request["reasoning"])
 
 
 def tool_payload(response):
@@ -88,16 +94,6 @@ def check_session(owner, created, run):
         raise SessionCancelledError("XMage table was cancelled or left")
 
 
-def require_game_only_events(events):
-    for event in events:
-        if event.get("type") == "item.completed" and event["item"].get("type") in {
-            "command_execution",
-            "file_change",
-            "web_search",
-        }:
-            raise RuntimeError("Information boundary violation: the player used a non-game tool")
-
-
 def native_terminal_reason(log_text, username):
     if f"[{username}] Game over: " in log_text:
         return "game_over"
@@ -106,18 +102,22 @@ def native_terminal_reason(log_text, username):
     return None
 
 
-def run_player(request, *, start_player=subscription_client.start, runtime=None):
+def run_player(request, *, start_player=None, runtime=None):
     if runtime is None:
         runtime = importlib.import_module("windows.local_smoke")
 
     local = runtime
     validate_request(request)
+    provider = request_provider(request)
+    start_player = start_player or provider.start
+    events_path = Path(request["run"]) / provider.events_file
     run = Path(request["run"])
     run.mkdir(parents=True, exist_ok=True)
     owner = psutil.Process(request["owner_pid"])
     created = owner.create_time()
     manifest = {
         "status": "joining",
+        "provider": provider.id,
         "table_id": request["table_id"],
         "model": request["model"],
         "reasoning": request["reasoning"],
@@ -125,7 +125,7 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
         "game_type": request["game_type"],
         "deck_type": request["deck_type"],
         "player_count": request["player_count"],
-        "auth": "existing Codex ChatGPT login",
+        "auth": provider.auth,
         "api_mode": False,
         "tool_policy": "gui-efficient-v1",
         "started_at_utc": datetime.now(UTC).isoformat(),
@@ -179,13 +179,13 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
         while True:
             check_session(owner, created, run)
             if bridge.poll() is not None:
-                raise RuntimeError("The ChatGPT game bridge stopped while joining; see bridge.log")
+                raise RuntimeError(f"The {provider.label} game bridge stopped while joining; see bridge.log")
             with socket.socket() as probe:
                 probe.settimeout(0.5)
                 if probe.connect_ex(("127.0.0.1", mcp_port)) == 0:
                     break
             if time.monotonic() > deadline:
-                raise TimeoutError("ChatGPT could not join the selected table within three minutes")
+                raise TimeoutError(f"{provider.label} could not join the selected table within three minutes")
             time.sleep(0.5)
         rpc(
             url,
@@ -201,7 +201,7 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
         while True:
             check_session(owner, created, run)
             if bridge.poll() is not None:
-                raise RuntimeError("The ChatGPT bridge stopped before the match started")
+                raise RuntimeError(f"The {provider.label} bridge stopped before the match started")
             state = tool_payload(rpc(url, "tools/call", {"name": "get_game_state", "arguments": {}}))
             choices = tool_payload(rpc(url, "tools/call", {"name": "get_action_choices", "arguments": {}}))
             if state.get("available") or choices.get("action_pending"):
@@ -226,8 +226,8 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
         (run / "player-prompt.txt").write_text(prompt, encoding="utf-8")
         agent = start_player(
             prompt,
-            log("codex-events.jsonl"),
-            log("codex-stderr.log"),
+            log(provider.events_file),
+            log(provider.stderr_file),
             gateway.url,
             model=request["model"],
             reasoning=request["reasoning"],
@@ -239,21 +239,21 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
         while agent.poll() is None:
             check_session(owner, created, run)
             if bridge.poll() is not None:
-                raise RuntimeError("The ChatGPT bridge stopped during play")
+                raise RuntimeError(f"The {provider.label} bridge stopped during play")
             if gateway.violations or gateway.call_count > MAX_CALLS:
                 raise RuntimeError("The game tool boundary or call limit was exceeded")
             if gateway.fatal_error is not None:
                 raise RuntimeError(gateway.fatal_error)
             if time.monotonic() - game_started > MAX_SECONDS:
                 raise TimeoutError("The interactive game exceeded its two-hour limit")
-            require_game_only_events(read_complete_events(run / "codex-events.jsonl"))
+            provider.require_game_only_events(read_complete_events(events_path))
             time.sleep(0.5)
-        trace = read_complete_events(run / "codex-events.jsonl")
-        require_game_only_events(trace)
-        manifest["usage"] = [event["usage"] for event in trace if event.get("type") == "turn.completed"]
+        trace = read_complete_events(events_path)
+        provider.require_game_only_events(trace)
+        manifest["usage"] = provider.usage(trace)
         terminal_reason = native_terminal_reason((run / "bridge.log").read_text(encoding="utf-8"), request["username"])
         if agent.returncode != 0 or terminal_reason is None:
-            raise RuntimeError("ChatGPT stopped before a confirmed game result; see codex-events.jsonl")
+            raise RuntimeError(f"{provider.label} stopped before a confirmed game result; see {provider.events_file}")
         manifest["terminal_reason"] = terminal_reason
         manifest["game_wall_seconds"] = round(time.monotonic() - game_started, 3)
         save_status("completed")
@@ -276,8 +276,7 @@ def run_player(request, *, start_player=subscription_client.start, runtime=None)
             manifest["tool_calls"] = gateway.call_count
             gateway.close()
             manifest["optimization"] = gateway.optimization_stats()
-        events = read_complete_events(run / "codex-events.jsonl")
-        manifest["usage"] = [event["usage"] for event in events if event.get("type") == "turn.completed"]
+        manifest["usage"] = provider.usage(read_complete_events(events_path))
         manifest["total_wall_seconds"] = round(time.monotonic() - started, 3)
         manifest["cleanup_complete"] = all(proc.poll() is not None for proc in processes)
         local.save_json(run / "manifest.json", manifest)

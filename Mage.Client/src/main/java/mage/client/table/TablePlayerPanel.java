@@ -44,9 +44,9 @@ public class TablePlayerPanel extends javax.swing.JPanel {
         add(playerRow, BorderLayout.CENTER);
         subscriptionPanel.add(new JLabel("Model:"));
         modelChoice.setPrototypeDisplayValue(null);
-        modelChoice.setToolTipText("Models available through your signed-in ChatGPT subscription");
-        modelChoice.getAccessibleContext().setAccessibleName("ChatGPT model");
-        reasoningChoice.getAccessibleContext().setAccessibleName("ChatGPT reasoning level");
+        modelChoice.setToolTipText("Models available through your signed-in subscription");
+        modelChoice.getAccessibleContext().setAccessibleName("Subscription model");
+        reasoningChoice.getAccessibleContext().setAccessibleName("Subscription reasoning level");
         subscriptionPanel.add(modelChoice);
         subscriptionPanel.add(new JLabel("Reasoning:"));
         subscriptionPanel.add(reasoningChoice);
@@ -61,16 +61,8 @@ public class TablePlayerPanel extends javax.swing.JPanel {
         playerNumber = playerNum;
         cbPlayerType.setModel(new DefaultComboBoxModel(SessionHandler.getPlayerTypes()));
         if (SubscriptionSupport.isConfigured()) {
-            cbPlayerType.addItem(SubscriptionSupport.PLAYER_TYPE);
-            if (modelChoice.getItemCount() == 0) {
-                for (SubscriptionSupport.Model model : SubscriptionSupport.models()) {
-                    modelChoice.addItem(model);
-                }
-                for (SubscriptionSupport.Model model : SubscriptionSupport.models()) {
-                    if (model.isDefault) {
-                        modelChoice.setSelectedItem(model);
-                    }
-                }
+            for (SubscriptionSupport.Provider provider : SubscriptionSupport.providers()) {
+                cbPlayerType.addItem(provider);
             }
         }
         this.lblPlayerNum.setText("Player " + playerNum);
@@ -111,11 +103,32 @@ public class TablePlayerPanel extends javax.swing.JPanel {
     }
 
     public boolean isSubscriptionPlayer() {
-        return SubscriptionSupport.PLAYER_TYPE.equals(cbPlayerType.getSelectedItem());
+        return getProvider() != null;
+    }
+
+    private SubscriptionSupport.Provider getProvider() {
+        return SubscriptionSupport.provider(cbPlayerType.getSelectedItem());
     }
 
     public void startSubscription(UUID tableId, MatchOptions options) throws IOException {
-        SubscriptionSupport.start(tableId, playerNumber, getPlayerDeck(), getModel(), getReasoning(), options);
+        SubscriptionSupport.start(getProvider(), tableId, playerNumber, getPlayerDeck(), getModel(), getReasoning(), options);
+    }
+
+    /** Fill the model list from the selected provider, keeping the selection when the provider is unchanged. */
+    private void updateModels() {
+        SubscriptionSupport.Provider provider = getProvider();
+        if (provider == null || provider.models.contains(modelChoice.getSelectedItem())) {
+            return;
+        }
+        modelChoice.removeAllItems();
+        for (SubscriptionSupport.Model model : provider.models) {
+            modelChoice.addItem(model);
+        }
+        for (SubscriptionSupport.Model model : provider.models) {
+            if (model.isDefault) {
+                modelChoice.setSelectedItem(model);
+            }
+        }
     }
 
     private SubscriptionSupport.Model getModel() {
@@ -135,13 +148,14 @@ public class TablePlayerPanel extends javax.swing.JPanel {
     }
 
     public void validateSubscription() {
-        SubscriptionSupport.validate(getPlayerDeck(), getModel(), getReasoning());
+        SubscriptionSupport.validate(getProvider(), getPlayerDeck(), getModel(), getReasoning());
     }
 
     public void saveSubscriptionSettings(String version) {
         String key = "chatgptSeat" + playerNumber + version;
         PreferencesDialog.saveValue(key, Boolean.toString(isSubscriptionPlayer()));
         if (isSubscriptionPlayer()) {
+            PreferencesDialog.saveValue(key + "Provider", getProvider().id);
             PreferencesDialog.saveValue(key + "Model", getModel().id);
             PreferencesDialog.saveValue(key + "Reasoning", getReasoning());
         }
@@ -150,11 +164,19 @@ public class TablePlayerPanel extends javax.swing.JPanel {
     public void loadSubscriptionSettings(String version) {
         String key = "chatgptSeat" + playerNumber + version;
         if (SubscriptionSupport.isConfigured() && Boolean.parseBoolean(PreferencesDialog.getCachedValue(key, "false"))) {
-            String selected = PreferencesDialog.getCachedValue(key + "Model", "");
+            // Settings saved before Claude support have no provider; a provider that is not signed in falls back to the first available.
+            SubscriptionSupport.Provider provider = SubscriptionSupport.providerById(
+                    PreferencesDialog.getCachedValue(key + "Provider", "chatgpt_subscription"));
+            boolean savedProvider = provider != null;
+            if (!savedProvider) {
+                provider = SubscriptionSupport.providers().get(0);
+            }
+            cbPlayerType.setSelectedItem(provider);
+            String selected = savedProvider ? PreferencesDialog.getCachedValue(key + "Model", "") : "";
             if (!selected.isEmpty()) {
-                SubscriptionSupport.Model model = SubscriptionSupport.models().stream()
+                SubscriptionSupport.Model model = provider.models.stream()
                         .filter(item -> item.id.equals(selected)).findFirst()
-                        .orElseThrow(() -> new IllegalArgumentException("Saved ChatGPT model is unavailable: " + selected));
+                        .orElseThrow(() -> new IllegalArgumentException("Saved subscription model is unavailable: " + selected));
                 modelChoice.setSelectedItem(model);
                 String effort = PreferencesDialog.getCachedValue(key + "Reasoning", model.defaultEffort);
                 if (!model.efforts.contains(effort)) {
@@ -162,7 +184,6 @@ public class TablePlayerPanel extends javax.swing.JPanel {
                 }
                 reasoningChoice.setSelectedItem(effort);
             }
-            cbPlayerType.setSelectedItem(SubscriptionSupport.PLAYER_TYPE);
         }
     }
 
@@ -239,11 +260,12 @@ public class TablePlayerPanel extends javax.swing.JPanel {
         if (cbPlayerType.getSelectedItem() == null) {
             return;
         }
+        updateModels();
         subscriptionPanel.setVisible(isSubscriptionPlayer());
         newPlayerPanel.showLevel(!isSubscriptionPlayer());
         if (isSubscriptionPlayer() || getPlayerType() != PlayerType.HUMAN) {
             this.newPlayerPanel.setVisible(true);
-            this.newPlayerPanel.setPlayerName(isSubscriptionPlayer() ? "ChatGPT " + playerNumber
+            this.newPlayerPanel.setPlayerName(isSubscriptionPlayer() ? getProvider().playerName + " " + playerNumber
                     : extractAiPlayerNumberFromLabel(this.lblPlayerNum.getText()));
         } else {
             this.newPlayerPanel.setVisible(false);

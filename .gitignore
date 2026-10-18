@@ -99,6 +99,8 @@ __pycache__
 **/client_secret*.json
 **/token.json
 **/tokens.json
+**/.credentials.json
+**/.claude.json
 
 # website
 website/node_modules/

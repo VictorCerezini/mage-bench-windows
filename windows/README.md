@@ -1,17 +1,23 @@
-# Windows and ChatGPT subscription support
+# Windows and ChatGPT/Claude subscription support
 
-This fork adds Windows launchers for native Mad controls, a ChatGPT-subscription
-player, and a normal XMage GUI seat where a human can play against that player.
-The match configuration GUI adds a local ChatGPT subscription opponent, with bridge
-seat selection for multiplayer. The game rules, cards and Mad AI are unchanged. The engine baseline is XMage
+This fork adds Windows launchers for native Mad controls, ChatGPT-subscription
+and Claude-subscription players, and a normal XMage GUI seat where a human can
+play against them. The match configuration GUI adds local **ChatGPT subscription**
+and **Claude subscription** opponents, with bridge seat selection for multiplayer. The game rules, cards and Mad AI are unchanged. The engine baseline is XMage
 1.4.61V1, inherited from Mage-Bench commit
 `370e14523fc49b50b42e8af65557a8875490d800`.
 
 ## Setup
 
-Install JDK 21, Maven, uv, and the Codex CLI. Use the CLI's supported ChatGPT
-sign-in (`codex login`); subscription limits and actual model access apply.
-This does not require a developer API key and does not copy authentication data.
+Install JDK 21, Maven, uv, and at least one subscription CLI:
+
+- **ChatGPT**: the Codex CLI with its supported ChatGPT sign-in (`codex login`).
+- **Claude**: Claude Code with its supported Claude subscription sign-in
+  (`claude auth login --claudeai`, choosing your Claude Pro/Max account, not an API key).
+  Double-click `windows/Sign-In-Claude.cmd` to do this with the configured CLI.
+
+Subscription limits and actual model access apply. Neither requires a developer
+API key, and no authentication data is copied.
 
 From the repository root in PowerShell:
 
@@ -21,7 +27,10 @@ From the repository root in PowerShell:
 
 `-MavenPath` can select a portable `mvn.cmd`. `-CodexPath` can select the native
 Windows `codex.exe`; npm's standard Windows layout is also recognized.
-`-CpuOnly` prepares native controls without requiring Codex. Setup builds the
+`-ClaudePath` can select `claude.exe`; otherwise `claude.exe` on `PATH` is used,
+then the copy bundled with the Claude desktop app (its versioned folder moves when
+the app updates, so rerun Setup afterwards). Setup needs at least one of the two
+CLIs. `-CpuOnly` prepares native controls without requiring either. Setup builds the
 Java modules and separate Java GUI/preferences helpers. `-SkipBuild` reuses an
 already-built checkout and Python environment. `-MavenRepository` selects an
 existing dependency cache; otherwise setup uses `.windows-local/m2`.
@@ -34,16 +43,33 @@ logs because startup monitoring and process-tree cleanup need unfiltered output.
 
 ## Play or test
 
-Double-click `windows/Play-vs-ChatGPT.cmd`, or run:
+Double-click `windows/Play-vs-LLM.cmd` (or the original `windows/Play-vs-ChatGPT.cmd`;
+both open the same session), or run:
 
 ```powershell
 & .\windows\Play-vs-ChatGPT.ps1
 ```
 
-The visible window is **XMage - ChatGPT subscription matches**. It opens the normal
-**New Table** dialog. Under **Other Players**, choose **ChatGPT subscription**,
-then select its **Model**, **Reasoning**, and **Deck**. Select your own deck in
-**Player 1 (You)**. Native opponent types, including Mad, remain available.
+The visible window is **XMage - LLM subscription matches**. It opens the normal
+**New Table** dialog. Under **Other Players**, choose **ChatGPT subscription** or
+**Claude subscription**, then select its **Model**, **Reasoning**, and **Deck**.
+Select your own deck in **Player 1 (You)**. Native opponent types, including Mad,
+remain available, and different seats can use different providers.
+
+Only providers whose CLI is signed in are offered; the launcher log names any
+provider that was skipped and why. Sign in, then reopen the launcher.
+
+### Claude models
+
+Claude Code has no account model-list call, so the selector offers **Claude Opus
+5.5** (default), **Claude Sonnet 5.5** and **Claude Haiku 5.5** with effort levels
+low, medium (default), high, xhigh and max. Discovery only checks that Claude Code
+is signed in with a Claude subscription (`claude auth status`); it starts no
+inference. The selected model ID is passed verbatim and model-access fallback is
+disabled, so a model your plan cannot use fails at game start instead of silently
+playing as another model. Higher effort uses more of your subscription allowance.
+
+### ChatGPT models
 
 The launcher asks the installed Codex CLI for the models available to its current
 ChatGPT sign-in. Reasoning choices change with the selected model. No model IDs
@@ -79,7 +105,7 @@ Already-open clients retain their original catalog until reopened.
 The read-only catalog refresh and prompt renderer are documented in the
 [official CLI reference](https://learn.chatgpt.com/docs/cli/reference#codex-debug-models).
 
-Click **Create**, wait for **ChatGPT 2** to join, then click **Start**. Opening the
+Click **Create**, wait for **ChatGPT 2** (or **Claude 2**) to join, then click **Start**. Opening the
 GUI or creating a table does not consume model inference; the player starts only
 when the game begins. Choose a starting player, respond to the mulligan prompt,
 and play normally. Canceling/leaving the table stops its subscription worker;
@@ -126,6 +152,7 @@ Run an LLM versus native Mad pilot and its complementary seat/start-order game:
 These use a 15-minute clock per player, 20-minute gameplay wall bound, normal
 unseeded shuffling and the same short deck. The model requested is `gpt-6-astra`
 at medium reasoning. No dated model snapshot is guaranteed by that alias.
+The pilot runner drives the ChatGPT player only; Claude is available in the GUI.
 
 For a CPU-only control, which invokes no model:
 
@@ -191,6 +218,17 @@ supported sign-in cache in place; the launcher never opens, copies or exports it
 Each player invocation forces ChatGPT login and removes provider credential
 overrides from the child environment.
 
+Claude players run `claude -p` with the subscription sign-in Claude Code already
+stores; the launcher reads only the `loggedIn`, `authMethod` and `apiProvider`
+fields of `claude auth status` and never saves the email or organization it also
+reports. API-key, auth-token, OAuth-token, Bedrock/Vertex/Foundry and base-URL
+overrides are removed from the child environment, and `--bare` (API-key-only) is
+never used. Every built-in tool is disabled (`--tools ""`), only the eight
+`mcp__mage__*` game tools are allowed (`--strict-mcp-config`, `dontAsk`
+permissions), and user/project/local settings, hooks, plugins, slash commands,
+CLAUDE.md files, auto-memory and session transcripts are off. The supervisor also
+stops the game if the CLI is offered or uses any non-game tool.
+
 Only eight game tools are exposed through an allow-listed loopback gateway.
 Shell, browser, plugin/app and multi-agent tools are disabled; project
 instructions are omitted and the player working directory is empty. Java
@@ -222,7 +260,8 @@ fixtures:
 They exercise HTTP filtering, accurate annotations, blocked-tool/call-budget
 enforcement, unaltered baseline responses, efficient GUI priority passing and
 lossless board references/recovery, credential-environment isolation,
-subscription-only command configuration, model catalog pagination/privacy,
+subscription-only command configuration for both CLIs, Claude sign-in and
+tool-boundary checks, multi-provider discovery, model catalog pagination/privacy,
 model-specific reasoning validation, GUI player startup/cancellation/failure
 cleanup with fake processes, and concurrently appended JSONL traces.
 Setup also runs a Java preferences check. The upstream Python suite remains
@@ -231,7 +270,7 @@ available through `make test` on its supported environment.
 Java regressions for mode validation, multiplayer seat assignment and cancellation:
 
 ```powershell
-mvn -B -pl Mage.Client,Mage.Client.Bridge -Dtest=SubscriptionMatchRulesTest,SubscriptionPlayerRegistryTest,BridgeSeatSelectionTest -Dsurefire.failIfNoSpecifiedTests=false test
+mvn -B -pl Mage.Client,Mage.Client.Bridge -Dtest=SubscriptionMatchRulesTest,SubscriptionPlayerRegistryTest,SubscriptionSupportTest,BridgeSeatSelectionTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 Native checks on 18 October 2026 reached the first turn of a Commander duel and

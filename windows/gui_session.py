@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 
 from windows import local_smoke as local
-from windows import model_catalog, paths, subscription_client
+from windows import paths, providers, subscription_client
 
 
 def launch_gui(env, port, catalog, run, log):
@@ -50,10 +50,13 @@ def main():
     run = paths.LOCAL_ROOT / "outputs/gui-sessions" / datetime.now(UTC).strftime("match_%Y%m%d_%H%M%S_UTC")
     run.mkdir(parents=True)
     print(f"Local session logs: {run}", flush=True)
-    catalog = model_catalog.discover()
-    catalog_path = run / "chatgpt-models.json"
+    catalog = providers.discover_all()
+    catalog_path = run / "subscription-models.json"
     local.save_json(catalog_path, catalog)
-    print(f"Discovered {len(catalog['models'])} ChatGPT models; no model turn started", flush=True)
+    for entry in catalog["providers"]:
+        print(f"{entry['playerType']}: {len(entry['models'])} models; no model turn started", flush=True)
+    for entry in catalog["unavailable"]:
+        print(f"{entry['id']} unavailable: {entry['reason']}", flush=True)
     env = subscription_client.clean_env()
     env["JAVA_HOME"] = str(local.JDK)
     env["PATH"] = str(local.JDK / "bin") + ";" + str(local.MAVEN.parent) + ";" + env["PATH"]

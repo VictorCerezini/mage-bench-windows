@@ -24,14 +24,14 @@ public final class MatchGui {
                     throw new IllegalStateException("Match GUI did not connect to the isolated server");
                 }
                 SwingUtilities.invokeLater(() -> {
-                    PreferencesDialog.saveValue(PreferencesDialog.KEY_NEW_TABLE_NAME, "You vs ChatGPT");
+                    PreferencesDialog.saveValue(PreferencesDialog.KEY_NEW_TABLE_NAME, "You vs LLM");
                     PreferencesDialog.saveValue(PreferencesDialog.KEY_NEW_TABLE_NUMBER_OF_WINS, "1");
                     PreferencesDialog.saveValue(PreferencesDialog.KEY_NEW_TABLE_TIME_LIMIT, "0");
                     PreferencesDialog.saveValue(PreferencesDialog.KEY_NEW_TABLE_DECK_TYPE, "Limited");
                     PreferencesDialog.saveValue(PreferencesDialog.KEY_NEW_TABLE_DECK_FILE, System.getProperty("experiment.deck"));
                     PreferencesDialog.saveValue(PreferencesDialog.KEY_NEW_TABLE_PLAYER_DECKS, System.getProperty("experiment.deck"));
                     PreferencesDialog.saveValue("chatgptSeat2", "true");
-                    MageFrame.getInstance().setTitle("XMage - ChatGPT subscription matches");
+                    MageFrame.getInstance().setTitle("XMage - LLM subscription matches");
                     NewTableDialog dialog = new NewTableDialog();
                     MageFrame.getDesktop().add(dialog, JLayeredPane.MODAL_LAYER);
                     System.out.println("MATCH_GUI_READY");
