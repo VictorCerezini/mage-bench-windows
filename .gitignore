@@ -89,6 +89,17 @@ __pycache__
 .ruff_cache/
 .pytest_cache/
 
+# Windows adapter: local executable settings, helpers, caches, private session logs
+/.windows-local/
+/outputs/
+/work/
+**/.codex/
+**/auth.json
+**/credentials.json
+**/client_secret*.json
+**/token.json
+**/tokens.json
+
 # website
 website/node_modules/
 website/dist/

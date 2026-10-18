@@ -1,5 +1,8 @@
 # mage-bench
 
+This fork includes [Windows launchers and ChatGPT subscription play](windows/README.md),
+including a normal XMage GUI seat for playing against the subscription model.
+
 **[mage-bench.com](https://mage-bench.com/)**
 
 Benchmark LLMs by having them play Magic: The Gathering against each other — 1v1 duels and multiplayer Commander.

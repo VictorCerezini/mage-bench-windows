@@ -1,0 +1,13 @@
+{
+  "title": "Classify closing the human GUI as an intentional session stop",
+  "description": "The Windows subscription supervisor currently raises RuntimeError when the human GUI exits during play and records gameplay_harness_failure. Closing the window is an expected interactive stop action. Reproduce by starting windows/Play-vs-ChatGPT.cmd and closing the game window before a terminal game result. Cleanup works, but the manifest should distinguish user_closed_window/stopped from protocol failure and normal gameplay loss. Add a supervisor test with fake process states; no model inference should be needed.",
+  "status": "open",
+  "priority": 3,
+  "type": "task",
+  "labels": [
+    "windows",
+    "puppeteer"
+  ],
+  "created_at": "2026-10-18T06:49:52.813827+00:00",
+  "updated_at": "2026-10-18T06:49:52.813827+00:00"
+}
