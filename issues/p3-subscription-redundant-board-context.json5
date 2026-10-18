@@ -1,0 +1,14 @@
+{
+  "title": "Reduce repeated board payloads without losing game information",
+  "description": "Offline audit on f1ecd8ae: 28 of 93 returned boards exactly repeated the last transmitted board; 381299 of 446353 compact payload bytes described boards. No recorded cursor use, and dominant choose_action tool lacks a board_cursor argument. Replaying an explicit unchanged marker reduced payload bytes by 24.75% while reconstructing all 96 successful tool payloads exactly; the JSON-RPC error was unchanged. This is not measured model-token or quota savings. Design GUI-specific full/unchanged snapshots with recovery after compaction, retaining action/game sequencing and all changed choices/state/rules. Existing cursors can advance on action snapshots even for an identical board: do not weaken them. Separately, 96 responses duplicate the same value in text and structuredContent; establish whether Codex forwards both to the model before changing the protocol or claiming savings. Acceptance: lossless deterministic replay, state changes/rule modifications, stale snapshots, per-seat isolation/hidden-information tests and safe first/full snapshot recovery. See doc/windows-subscription-usage-audit.md.",
+  "status": "open",
+  "priority": 3,
+  "type": "task",
+  "labels": [
+    "windows",
+    "bridge",
+    "performance"
+  ],
+  "created_at": "2026-10-18T16:38:08Z",
+  "updated_at": "2026-10-18T16:38:08Z"
+}
