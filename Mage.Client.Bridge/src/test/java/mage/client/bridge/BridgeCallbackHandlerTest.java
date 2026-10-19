@@ -4494,6 +4494,117 @@ class BridgeCallbackHandlerTest {
     }
 
     @SuppressWarnings("removal")
+    @Test
+    void sideboardingSubmitsTheUnchangedDeckLikeTheComputerPlayer() throws Exception {
+        UUID tableId = UUID.randomUUID();
+        List<Object[]> submitted = new ArrayList<>();
+        BridgeMageClient client = new BridgeMageClient("TestPlayer");
+        client.setSession((Session) Proxy.newProxyInstance(
+            Session.class.getClassLoader(),
+            new Class<?>[]{Session.class},
+            (proxy, method, args) -> {
+                if ("submitDeck".equals(method.getName())) {
+                    submitted.add(args);
+                    return true;
+                }
+                return defaultReturnValue(method.getReturnType());
+            }
+        ));
+        BridgeCallbackHandler handler = client.getCallbackHandler();
+        DeckCardLists deck = new DeckCardLists();
+        deck.getCards().add(new DeckCardInfo("Island", "1", "M21", 40));
+        handler.setDeckList(deck);
+
+        handler.handleCallback(new ClientCallback(
+            ClientCallbackMethod.SIDEBOARD,
+            tableId,
+            new TableClientMessage().withTable(tableId, null).withTime(180),
+            false
+        ));
+        handler.awaitProcessorIdle();
+
+        assertThat(submitted).hasSize(1);
+        assertThat(submitted.get(0)[0]).isEqualTo(tableId);
+        assertThat(submitted.get(0)[1]).isSameAs(deck);
+    }
+
+    @Test
+    void matchModeStaysForTheNextGameWithFreshStateAndStopsWhenTheMatchEnds() throws Exception {
+        UUID tableId = UUID.randomUUID();
+        UUID playerId = UUID.randomUUID();
+        UUID firstGame = UUID.randomUUID();
+        UUID secondGame = UUID.randomUUID();
+        BridgeMageClient client = new BridgeMageClient("TestPlayer");
+        client.setSession((Session) Proxy.newProxyInstance(
+            Session.class.getClassLoader(),
+            new Class<?>[]{Session.class},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "joinGame" -> true;
+                case "getGameChatId" -> Optional.empty();
+                default -> defaultReturnValue(method.getReturnType());
+            }
+        ));
+        BridgeCallbackHandler handler = client.getCallbackHandler();
+        handler.setContinueMatchAfterGame(true);
+        BridgeGameState gameState = (BridgeGameState) getProcessorStateField(handler, "gameState");
+
+        startGame(handler, firstGame, tableId, playerId);
+        handler.handleCallback(new ClientCallback(
+            ClientCallbackMethod.GAME_OVER,
+            firstGame,
+            new GameClientMessage(gameView(9), Collections.<String, Serializable>emptyMap(), "Player Opponent is the winner"),
+            false
+        ));
+        handler.handleCallback(new ClientCallback(ClientCallbackMethod.END_GAME_INFO, firstGame, gameEnd(false), false));
+        handler.awaitProcessorIdle();
+        assertThat(client.isRunning()).isTrue();
+        assertThat(hasActiveGame(handler, firstGame)).isFalse();
+
+        gameState.markPlayerDead();
+        startGame(handler, secondGame, tableId, playerId);
+        handler.awaitProcessorIdle();
+        assertThat(hasActiveGame(handler, secondGame)).isTrue();
+        assertThat(gameState.playerDead()).isFalse();
+        assertThat(handler.getGameState(null).available).isFalse();
+
+        handler.handleCallback(new ClientCallback(
+            ClientCallbackMethod.GAME_OVER,
+            secondGame,
+            new GameClientMessage(gameView(4), Collections.<String, Serializable>emptyMap(), "Player TestPlayer is the winner"),
+            false
+        ));
+        handler.handleCallback(new ClientCallback(ClientCallbackMethod.END_GAME_INFO, secondGame, gameEnd(true), false));
+        long deadline = System.currentTimeMillis() + 5000;
+        while (client.isRunning() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20);
+        }
+        assertThat(client.isRunning()).isFalse();
+    }
+
+    private static void startGame(BridgeCallbackHandler handler, UUID gameId, UUID tableId, UUID playerId) {
+        handler.handleCallback(new ClientCallback(
+            ClientCallbackMethod.START_GAME,
+            gameId,
+            new TableClientMessage().withTable(tableId, null).withPlayer(playerId),
+            false
+        ));
+    }
+
+    private static mage.view.GameEndView gameEnd(boolean matchOver) throws Exception {
+        mage.view.MatchView match = (mage.view.MatchView) UNSAFE.allocateInstance(mage.view.MatchView.class);
+        setDeclaredField(match, "endTime", matchOver ? new java.util.Date() : null);
+        mage.view.GameEndView end = (mage.view.GameEndView) UNSAFE.allocateInstance(mage.view.GameEndView.class);
+        setDeclaredField(end, "matchView", match);
+        setDeclaredField(end, "matchInfo", matchOver ? "You won the match!" : "You need one more win to win the match.");
+        return end;
+    }
+
+    private static void setDeclaredField(Object target, String name, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
     private static final Unsafe UNSAFE = initUnsafe();
 
     @SuppressWarnings("removal")

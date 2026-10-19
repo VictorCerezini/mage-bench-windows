@@ -439,3 +439,16 @@ def test_malformed_native_response_is_fatal_instead_of_triggering_a_model_retry_
         assert gateway.fatal_error is not None
         record = json.loads(trace.read_text())
         assert record["outcome"] == "invalid_response"
+
+
+def test_finished_game_answers_game_over_without_reaching_the_next_game(serve):
+    with serve([decision()]) as (gateway, post, received, trace):
+        post("get_action_choices")
+        gateway.finish_game()
+        for tool, arguments in (("choose_action", {"choice": "p1"}), ("pass_priority", {}), ("get_game_state", {})):
+            response = post(tool, arguments)
+            assert value(response)["game_over"] is True
+        assert len(received) == 1
+        records = [json.loads(line) for line in trace.read_text().splitlines()]
+        assert [record["outcome"] for record in records] == ["ok", "game_finished", "game_finished", "game_finished"]
+        assert gateway.optimization_stats()["auto_passes"] == 0

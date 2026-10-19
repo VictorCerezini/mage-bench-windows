@@ -74,6 +74,7 @@ def harness(tmp_path, monkeypatch):
 
     def launch(_module, _env, log, **_kwargs):
         assert f"-Dxmage.bridge.seat={request['seat']}" in _env["MAVEN_OPTS"]
+        assert "continueMatch" not in _env["MAVEN_OPTS"]
         log.write(f"[{request['username']}] Game over: fake test result\n")
         log.flush()
         return bridge
@@ -91,6 +92,7 @@ def harness(tmp_path, monkeypatch):
         call_count=0,
         fatal_error=None,
         close=lambda: None,
+        finish_game=lambda: None,
         optimization_stats=lambda: {"policy": "gui-efficient-v2"},
     )
     monkeypatch.setattr(gui_player.socket, "socket", FakeSocket)
@@ -403,3 +405,159 @@ def test_closing_the_window_after_the_game_ended_records_the_result(harness, mon
     assert manifest["terminal_reason"] == "game_over"
     assert manifest["reason"] == "XMage player window closed"
     assert len(stopped) == 2
+
+
+def test_game_log_keeps_each_game_of_a_match_apart():
+    text = (
+        "joined\n[ChatGPT 2] Game started: gameId=a\n[ChatGPT 2] Game over: first\n"
+        "[ChatGPT 2] Match continues: You need one more win to win the match.\n"
+        "[ChatGPT 2] Game started: gameId=b\n[ChatGPT 2] Player death detected from game log\n"
+    )
+    assert gui_player.games_started(text, "ChatGPT 2") == 2
+    assert gui_player.native_terminal_reason(gui_player.game_log(text, "ChatGPT 2", 1), "ChatGPT 2") == "game_over"
+    assert gui_player.native_terminal_reason(gui_player.game_log(text, "ChatGPT 2", 2), "ChatGPT 2") == (
+        "player_eliminated"
+    )
+    assert gui_player.game_log(text, "ChatGPT 2", 1).startswith("joined")
+    assert gui_player.match_line(text, "ChatGPT 2", "Match continues") == "You need one more win to win the match."
+    assert gui_player.match_line(text, "ChatGPT 2", "Match over") is None
+    assert gui_player.game_file("codex-events.jsonl", 1) == "codex-events.jsonl"
+    assert gui_player.game_file("codex-events.jsonl", 2) == "codex-events-game2.jsonl"
+
+
+@pytest.mark.parametrize("wins", [0, gui_player.MAX_WINS + 1])
+def test_wins_needed_outside_the_supported_range_is_rejected(harness, wins):
+    request, *_ = harness
+    request["wins_needed"] = wins
+    with pytest.raises(ValueError, match="Wins needed"):
+        gui_player.validate_request(request)
+
+
+@pytest.fixture
+def match(harness, monkeypatch):
+    """A best-of-three whose bridge log the fake players advance one game at a time."""
+    request, runtime, stopped, _ = harness
+    request["wins_needed"] = 2
+    bridge_log = []
+    gateways = []
+
+    def launch(_module, env, log, **_kwargs):
+        assert "-Dxmage.bridge.continueMatch=true" in env["MAVEN_OPTS"]
+        bridge_log.append(log)
+        write("Game started: gameId=first")
+        return SimpleNamespace(poll=lambda: None)
+
+    def write(line):
+        bridge_log[0].write(f"[{request['username']}] {line}\n")
+        bridge_log[0].flush()
+
+    def make_gateway(_url, _tools, trace, **_kwargs):
+        gateway = SimpleNamespace(
+            url="http://127.0.0.1:12346/mcp",
+            trace=trace,
+            violations=[],
+            call_count=3,
+            fatal_error=None,
+            finished=[],
+            close=lambda: None,
+            optimization_stats=lambda: {"policy": "gui-efficient-v2", "auto_passes": 2},
+        )
+        gateway.finish_game = lambda: gateway.finished.append(True)
+        gateways.append(gateway)
+        return gateway
+
+    runtime.launch = launch
+    monkeypatch.setattr(gui_player, "GameToolGateway", make_gateway)
+    monkeypatch.setattr(gui_player, "rpc", lambda *_: result({"available": True}))
+    return request, runtime, stopped, gateways, write
+
+
+def test_best_of_three_plays_each_game_with_a_fresh_player_until_the_match_ends(match):
+    request, runtime, stopped, gateways, write = match
+    prompts = []
+
+    def start(prompt, out, _err, _url, **_kwargs):
+        prompts.append(prompt)
+        out.write(json.dumps({"type": "turn.completed", "usage": {"input_tokens": len(prompts)}}) + "\n")
+        out.flush()
+        write(f"Game over: game {len(prompts)}")
+        if len(prompts) == 1:
+            write("Match continues: You need one more win to win the match.")
+            write("Game started: gameId=second")
+        else:
+            write("Match over: You won the match!")
+        return SimpleNamespace(poll=lambda: 0, returncode=0)
+
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 0
+    run = Path(request["run"])
+    manifest = json.loads((run / "manifest.json").read_text())
+    assert manifest["status"] == "completed"
+    assert manifest["match_result"] == "You won the match!"
+    assert [game["game"] for game in manifest["games"]] == [1, 2]
+    assert manifest["usage"] == [{"input_tokens": 1}, {"input_tokens": 2}]
+    assert manifest["tool_calls"] == 6
+    assert manifest["optimization"] == {"policy": "gui-efficient-v2", "auto_passes": 4}
+    assert "first player to win 2 games. This is game 1." in prompts[0]
+    assert "Match status" not in prompts[0]
+    assert "This is game 2. Match status: You need one more win to win the match." in prompts[1]
+    assert [gateway.trace.name for gateway in gateways] == ["player-tools.jsonl", "player-tools-game2.jsonl"]
+    assert (run / "codex-events-game2.jsonl").is_file()
+    assert (run / "player-prompt-game2.txt").is_file()
+    assert len(stopped) == 3
+
+
+def test_match_won_in_the_first_game_needs_no_further_player(match):
+    request, runtime, stopped, _, write = match
+
+    def start(*_args, **_kwargs):
+        write("Game over: conceded")
+        write("Match over: Opponent has quit the match.")
+        return SimpleNamespace(poll=lambda: 0, returncode=0)
+
+    start = Mock(side_effect=start)
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 0
+    manifest = json.loads((Path(request["run"]) / "manifest.json").read_text())
+    assert manifest["status"] == "completed"
+    assert manifest["match_result"] == "Opponent has quit the match."
+    start.assert_called_once()
+    assert len(stopped) == 2
+
+
+def test_bridge_leaving_between_games_without_a_match_result_is_a_failure(match):
+    request, runtime, _, _, write = match
+
+    def start(*_args, **_kwargs):
+        write("Game over: first")
+        bridge.poll = lambda: 1
+        return SimpleNamespace(poll=lambda: 0, returncode=0)
+
+    launch = runtime.launch
+    bridge = SimpleNamespace()
+
+    def launch_and_keep(*args, **kwargs):
+        bridge.poll = launch(*args, **kwargs).poll
+        return bridge
+
+    runtime.launch = launch_and_keep
+    assert gui_player.run_player(request, runtime=runtime, start_player=start) == 1
+    manifest = json.loads((Path(request["run"]) / "manifest.json").read_text())
+    assert manifest["status"] == "failed"
+    assert "between games" in manifest["error"]
+    assert len(manifest["games"]) == 1
+    assert manifest["cleanup_complete"] is True
+
+
+def test_player_that_keeps_going_after_its_game_ended_is_stopped_and_the_result_kept(harness, monkeypatch):
+    request, runtime, stopped, gateway = harness
+    finished = []
+    gateway.finish_game = lambda: finished.append(True)
+    monkeypatch.setattr(gui_player, "REPORT_GRACE_SECONDS", 0)
+    monkeypatch.setattr(gui_player, "rpc", lambda *_: result({"available": True}))
+    # The harness bridge log already reports the game over; this player never exits by itself.
+    agent = SimpleNamespace(poll=lambda: None)
+    assert gui_player.run_player(request, runtime=runtime, start_player=Mock(return_value=agent)) == 0
+    manifest = json.loads((Path(request["run"]) / "manifest.json").read_text())
+    assert manifest["status"] == "completed"
+    assert manifest["terminal_reason"] == "game_over"
+    assert finished == [True]
+    assert agent in stopped

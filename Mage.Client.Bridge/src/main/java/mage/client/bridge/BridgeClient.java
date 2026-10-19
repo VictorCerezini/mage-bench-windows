@@ -90,6 +90,7 @@ public class BridgeClient {
 
         BridgeCallbackHandler callbackHandler = client.getCallbackHandler();
         callbackHandler.setKeepAliveAfterGame(keepAlive);
+        callbackHandler.setContinueMatchAfterGame(Boolean.getBoolean("xmage.bridge.continueMatch"));
         String errorLogPath = System.getProperty("xmage.bridge.errorlog");
         if (errorLogPath != null && !errorLogPath.isEmpty()) {
             callbackHandler.setErrorLogPath(errorLogPath);

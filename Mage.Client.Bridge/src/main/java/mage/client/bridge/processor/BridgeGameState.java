@@ -8,6 +8,7 @@ import java.util.UUID;
 
 public final class BridgeGameState {
     private boolean keepAliveAfterGame = false;
+    private boolean continueMatchAfterGame = false;
     private boolean gameEverStarted = false;
     private boolean activeGame = false;
     private UUID currentGameId = null;
@@ -27,6 +28,14 @@ public final class BridgeGameState {
 
     public void setKeepAliveAfterGame(boolean keepAliveAfterGame) {
         this.keepAliveAfterGame = keepAliveAfterGame;
+    }
+
+    public boolean continueMatchAfterGame() {
+        return continueMatchAfterGame;
+    }
+
+    public void setContinueMatchAfterGame(boolean continueMatchAfterGame) {
+        this.continueMatchAfterGame = continueMatchAfterGame;
     }
 
     public boolean gameEverStarted() {

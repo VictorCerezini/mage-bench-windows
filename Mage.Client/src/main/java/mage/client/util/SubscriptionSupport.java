@@ -124,6 +124,7 @@ public final class SubscriptionSupport {
         request.put("game_type", options.getGameType());
         request.put("deck_type", options.getDeckType());
         request.put("player_count", options.getPlayerTypes().size());
+        request.put("wins_needed", options.getWinsNeeded());
         request.put("username", provider.playerName + " " + seat);
         request.put("owner_pid", ProcessHandle.current().pid());
         request.put("run", run.toString());

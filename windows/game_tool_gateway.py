@@ -23,6 +23,16 @@ def rpc_error(request, code, message):
     return {"jsonrpc": "2.0", "id": request.get("id"), "error": {"code": code, "message": message}}
 
 
+def finished_response(request):
+    result = {"game_over": True, "message": "This game has ended. Report your result briefly and stop."}
+    text = json.dumps(result, separators=(",", ":"))
+    return {
+        "jsonrpc": "2.0",
+        "id": request.get("id"),
+        "result": {"content": [{"type": "text", "text": text}], "structuredContent": result, "isError": False},
+    }
+
+
 class GameToolGateway:
     def __init__(
         self, upstream, allowed_tools, trace_path, max_calls=400, *, optimize_play=False, upstream_timeout=180
@@ -46,6 +56,7 @@ class GameToolGateway:
         self.fatal_error = None
         self.upstream_response_bytes = 0
         self.model_response_bytes = 0
+        self.game_finished = False
         gateway = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -90,6 +101,9 @@ class GameToolGateway:
                         if params.get("name") not in gateway.allowed or count > gateway.max_calls:
                             response = rpc_error(payload, -32601, "Tool not permitted or pilot call limit exceeded")
                             record["outcome"] = "rejected"
+                    if response is None and is_call and gateway.game_finished:
+                        response = finished_response(payload)
+                        record["outcome"] = "game_finished"
                     if response is None:
                         effective = gateway.view.prepare_request(payload) if is_call and gateway.view else payload
                         if is_call:
@@ -104,7 +118,12 @@ class GameToolGateway:
                             raise ValueError("Invalid native tool result")
                     record["response"] = response
                     answered = response
-                    if is_call and gateway.view and gateway.view.needs_auto_pass(record["effective_tool"], response):
+                    if (
+                        is_call
+                        and record["outcome"] == "ok"
+                        and gateway.view
+                        and gateway.view.needs_auto_pass(record["effective_tool"], response)
+                    ):
                         # Nothing is playable after this action, so its window is passed without a model turn.
                         passing = {
                             "jsonrpc": "2.0",
@@ -130,7 +149,9 @@ class GameToolGateway:
                     ):
                         record["outcome"] = "upstream_error"
                     outgoing = (
-                        gateway.view.model_response(params["name"], answered) if is_call and gateway.view else response
+                        gateway.view.model_response(params["name"], answered)
+                        if is_call and gateway.view and record["outcome"] != "game_finished"
+                        else response
                     )
                 except (TimeoutError, urllib.error.URLError, ConnectionError, OSError, ValueError) as error:
                     if gateway.view:
@@ -218,6 +239,10 @@ class GameToolGateway:
             "upstream_response_bytes": self.upstream_response_bytes,
             "model_response_bytes": self.model_response_bytes,
         }
+
+    def finish_game(self):
+        """Answer every later game call with game_over, so this player never acts in the match's next game."""
+        self.game_finished = True
 
     def close(self):
         self.server.shutdown()

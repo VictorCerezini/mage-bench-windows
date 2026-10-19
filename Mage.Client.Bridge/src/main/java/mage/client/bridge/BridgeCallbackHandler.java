@@ -117,6 +117,8 @@ public class BridgeCallbackHandler {
     private static final long CHAT_DEDUP_WINDOW_MS = 30_000;
     private static final long KEEPALIVE_CONCEDE_WAIT_SECONDS = 15;
     private volatile boolean keepAliveAfterGameConfig = false;
+    private volatile boolean continueMatchAfterGameConfig = false;
+    private volatile DeckCardLists submittedDeck = null;
     private volatile int maxInteractionsPerTurnConfig = 25;
 
     private volatile BridgePublishedDecklistSnapshot publishedDecklist = BridgePublishedDecklist.emptySnapshot();
@@ -166,7 +168,14 @@ public class BridgeCallbackHandler {
                 processorState.gameState().currentRound(),
                 source
             ),
-            CHAT_DEDUP_WINDOW_MS
+            CHAT_DEDUP_WINDOW_MS,
+            () -> submittedDeck,
+            () -> {
+                processorState.reset();
+                processorState.gameState().clearPlayerDead();
+                publishedQueryStateRef.get().clearProjectedGameState("No game state available yet", "nextMatchGame");
+                publishedQueryStateRef.get().clearProjectedActionChoices("nextMatchGame");
+            }
         );
         BridgeCallbackDispatcher dispatcher = new BridgeCallbackDispatcher(callbackProcessorService);
         this.processor = new BridgeProcessor(client.getUsername(), logger, dispatcher::process);
@@ -357,7 +366,15 @@ public class BridgeCallbackHandler {
         logger.info("[" + client.getUsername() + "] keepAliveAfterGame=" + keepAliveAfterGame);
     }
 
+    /** Stay connected after a game that does not end the match, and play its next game. */
+    public void setContinueMatchAfterGame(boolean continueMatchAfterGame) {
+        continueMatchAfterGameConfig = continueMatchAfterGame;
+        applyPersistentProcessorConfig();
+        logger.info("[" + client.getUsername() + "] continueMatchAfterGame=" + continueMatchAfterGame);
+    }
+
     public void setDeckList(DeckCardLists deckList) {
+        this.submittedDeck = deckList;
         this.publishedDecklist = BridgePublishedDecklist.snapshot(deckList);
     }
 
@@ -386,6 +403,7 @@ public class BridgeCallbackHandler {
         BridgeCallbackHandler fresh = new BridgeCallbackHandler(client);
         fresh.session = this.session;
         fresh.keepAliveAfterGameConfig = this.keepAliveAfterGameConfig;
+        fresh.continueMatchAfterGameConfig = this.continueMatchAfterGameConfig;
         fresh.maxInteractionsPerTurnConfig = this.maxInteractionsPerTurnConfig;
         fresh.applyPersistentProcessorConfig();
         fresh.errorLogPath = this.errorLogPath;
@@ -454,6 +472,7 @@ public class BridgeCallbackHandler {
             @Override
             public Void execute() {
                 processorState.gameState().setKeepAliveAfterGame(keepAliveAfterGameConfig);
+                processorState.gameState().setContinueMatchAfterGame(continueMatchAfterGameConfig);
                 processorState.interactionState().setMaxInteractionsPerTurn(maxInteractionsPerTurnConfig);
                 return null;
             }

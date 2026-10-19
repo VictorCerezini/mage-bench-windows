@@ -160,15 +160,28 @@ of racing to take any empty human seat. Canceling the table stops every model
 seat. In multiplayer, a player stops after its own confirmed elimination even
 if other participants are still playing. Opponent hands remain hidden.
 
-Two lifecycle restrictions remain: **Wins must be 1**, because the subscription
-supervisor does not yet handle sideboarding and later games of a match; and the
-**table password must be empty**, because the bridge does not yet send one. The
-error messages identify these separately. These are not restrictions on Commander
+Multi-game matches (Wins 2 or 3, best of three or five) are supported. Like
+XMage's own computer players, a model seat keeps its deck unchanged between
+games: its bridge submits the original deck as soon as sideboarding starts, and
+the human still sideboards normally. Each game is played by a fresh model
+session, so context and cost stay bounded per game; its prompt names the game
+number and the match status the server reports. Once a game is decided, that
+session's further tool calls only answer `game_over` and can never act in the
+next game; a session that does not stop within two minutes of its result is
+ended. The seat finishes when the server reports the match result. Game 1 keeps
+the usual file names; later games add `-game2`, `-game3` and so on (for example
+`player-tools-game2.jsonl`), and `manifest.json` lists each game with the match
+result and combined usage.
+
+One lifecycle restriction remains: the **table password must be empty**,
+because the bridge does not yet send one. This is not a restriction on Commander
 or other game formats. Tournament/draft workflows are separate from New Table
 and have not been integrated with the subscription player.
 
 The launcher defaults to no player clock, has a two-hour gameplay wall bound and
-a 2,000-call bound per model, and expires an unstarted table after ten minutes.
+a 2,000-call bound per model session (each game of a match gets its own), waits
+up to ten minutes for a match's next game, and expires an unstarted table after
+ten minutes.
 Subscription usage limits still apply. A second launcher invocation detects the
 running session. Restart an already-open client after updating the build.
 
@@ -337,7 +350,8 @@ subscription-only command configuration for both CLIs, Claude sign-in and
 tool-boundary checks, OpenRouter free-model filtering, the Z.ai documented-model
 list, key privacy and OpenCode isolation, multi-provider discovery, model catalog pagination/privacy,
 model-specific reasoning validation, GUI player startup/cancellation/failure
-cleanup with fake processes, and concurrently appended JSONL traces.
+cleanup and best-of-three game sequencing with fake processes, and concurrently
+appended JSONL traces.
 Setup also runs a Java preferences check. The upstream Python suite remains
 available through `make test` on its supported environment.
 

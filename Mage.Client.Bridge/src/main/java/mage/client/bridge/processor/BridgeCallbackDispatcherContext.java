@@ -35,7 +35,9 @@ public interface BridgeCallbackDispatcherContext {
 
     void handleGameOver(UUID gameId, Object data);
 
-    void handleEndGameInfo(UUID gameId);
+    void handleEndGameInfo(UUID gameId, Object data);
+
+    void handleSideboard(Object data);
 
     void handleChatMessage(Object data);
 

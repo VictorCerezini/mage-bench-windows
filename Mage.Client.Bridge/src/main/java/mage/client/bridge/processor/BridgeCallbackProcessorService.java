@@ -1,5 +1,6 @@
 package mage.client.bridge.processor;
 
+import mage.cards.decks.DeckCardLists;
 import mage.client.bridge.PendingAction;
 import mage.client.bridge.listener.BridgeCallbackIngressErrorHandler;
 import mage.game.BridgeLogEntry;
@@ -7,6 +8,7 @@ import mage.interfaces.callback.ClientCallbackMethod;
 import mage.remote.Session;
 import mage.view.AbilityPickerView;
 import mage.view.ChatMessage;
+import mage.view.GameEndView;
 import mage.view.GameClientMessage;
 import mage.view.GameView;
 import mage.view.PlayerView;
@@ -39,6 +41,8 @@ public final class BridgeCallbackProcessorService
     private final Runnable clearShortIds;
     private final BiConsumer<GameView, String> projectPublishedGameState;
     private final long chatDedupWindowMs;
+    private final Supplier<DeckCardLists> deckSupplier;
+    private final Runnable resetForNextGame;
 
     public BridgeCallbackProcessorService(
             String username,
@@ -55,7 +59,9 @@ public final class BridgeCallbackProcessorService
             Runnable stopClient,
             Runnable clearShortIds,
             BiConsumer<GameView, String> projectPublishedGameState,
-            long chatDedupWindowMs) {
+            long chatDedupWindowMs,
+            Supplier<DeckCardLists> deckSupplier,
+            Runnable resetForNextGame) {
         this.username = username;
         this.logger = logger;
         this.processorState = processorState;
@@ -71,6 +77,8 @@ public final class BridgeCallbackProcessorService
         this.clearShortIds = clearShortIds;
         this.projectPublishedGameState = projectPublishedGameState;
         this.chatDedupWindowMs = chatDedupWindowMs;
+        this.deckSupplier = deckSupplier;
+        this.resetForNextGame = resetForNextGame;
     }
 
     @Override
@@ -256,6 +264,12 @@ public final class BridgeCallbackProcessorService
                     + " (gameId=" + gameId + ")");
             return;
         }
+        BridgeGameState gameState = processorState.gameState();
+        if (gameState.continueMatchAfterGame() && gameState.gameEverStarted() && !gameId.equals(gameState.currentGameId())) {
+            // A later game of the same match starts from a clean slate, like a fresh bridge would.
+            resetForNextGame.run();
+            logger.info("[" + username + "] Next game of the match: previous game state cleared");
+        }
         UUID playerId = message.getPlayerId();
         processorState.gameState().activateGame(gameId, playerId);
         clearShortIds.run();
@@ -308,6 +322,8 @@ public final class BridgeCallbackProcessorService
 
         if (processorState.gameState().keepAliveAfterGame()) {
             logger.info("[" + username + "] Game ended (keepAlive mode, staying connected)");
+        } else if (processorState.gameState().continueMatchAfterGame()) {
+            logger.info("[" + username + "] Game ended, waiting for the match result");
         } else {
             logger.info("[" + username + "] Game ended, stopping client");
             stopClient.run();
@@ -316,8 +332,23 @@ public final class BridgeCallbackProcessorService
     }
 
     @Override
-    public void handleEndGameInfo(UUID gameId) {
+    public void handleEndGameInfo(UUID gameId, Object data) {
         boolean wasActive = cleanupGame(gameId);
+        if (processorState.gameState().continueMatchAfterGame()) {
+            if (wasActive) {
+                logger.warn("[" + username + "] END_GAME_INFO cleaning up game " + gameId
+                    + " (GAME_OVER was likely dropped)");
+            }
+            GameEndView end = data instanceof GameEndView view ? view : null;
+            if (end != null && end.getMatchView() != null && end.getMatchView().getEndTime() == null) {
+                logger.info("[" + username + "] Match continues: " + end.getMatchInfo());
+            } else {
+                logger.info("[" + username + "] Match over: " + (end != null ? end.getMatchInfo() : "no match result"));
+                stopClient.run();
+            }
+            advancePendingFlows.run();
+            return;
+        }
         if (!wasActive) {
             logger.info("[" + username + "] End game info received for game " + gameId);
             return;
@@ -329,6 +360,24 @@ public final class BridgeCallbackProcessorService
             stopClient.run();
         }
         advancePendingFlows.run();
+    }
+
+    @Override
+    public void handleSideboard(Object data) {
+        UUID tableId = ((TableClientMessage) data).getCurrentTableId();
+        DeckCardLists deck = deckSupplier.get();
+        if (deck == null) {
+            logger.warn("[" + username + "] Sideboarding: no deck to submit for table " + tableId
+                + "; the server keeps the deck when sideboarding times out");
+            return;
+        }
+        // Like XMage's computer players, the deck stays unchanged between games.
+        if (sessionSupplier.get().submitDeck(tableId, deck)) {
+            logger.info("[" + username + "] Sideboarding: submitted the unchanged deck for table " + tableId);
+        } else {
+            logger.warn("[" + username + "] Sideboarding: the server refused the unchanged deck for table " + tableId
+                + "; it keeps the deck when sideboarding times out");
+        }
     }
 
     @Override

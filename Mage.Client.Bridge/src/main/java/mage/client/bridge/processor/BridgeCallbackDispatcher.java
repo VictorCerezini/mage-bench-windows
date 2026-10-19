@@ -118,7 +118,11 @@ public final class BridgeCallbackDispatcher {
                     break;
 
                 case END_GAME_INFO:
-                    context.handleEndGameInfo(objectId);
+                    context.handleEndGameInfo(objectId, data);
+                    break;
+
+                case SIDEBOARD:
+                    context.handleSideboard(data);
                     break;
 
                 case CHATMESSAGE:

@@ -42,12 +42,12 @@ class SubscriptionMatchRulesTest {
     }
 
     @Test
-    void multipleGamesExplainTheActualMissingLifecycle() {
-        MatchOptions options = match("Commander Two Player Duel", 2);
-        options.setWinsNeeded(2);
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> SubscriptionMatchRules.validate(options));
-        assertTrue(error.getMessage().contains("sideboard"));
+    void bestOfThreeAndFiveMatchesArePlayable() {
+        for (int wins : new int[]{2, 3}) {
+            MatchOptions options = match("Two Player Duel", 2);
+            options.setWinsNeeded(wins);
+            assertDoesNotThrow(() -> SubscriptionMatchRules.validate(options), "wins " + wins);
+        }
     }
 
     @Test
