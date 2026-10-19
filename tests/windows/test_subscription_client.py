@@ -26,6 +26,25 @@ def test_subscription_command_forces_chatgpt_and_restricts_tools(monkeypatch):
     assert "--ephemeral" in command
 
 
+def test_game_tools_are_called_directly_with_a_trimmed_prompt(monkeypatch):
+    monkeypatch.setattr(paths, "settings", lambda: {"codex_executable": "C:/Tools/codex.exe"})
+    command = subscription_client.command("http://127.0.0.1:12345/mcp")
+    configs = dict(command[index + 1].split("=", 1) for index, value in enumerate(command) if value == "-c")
+    assert json.loads(configs["features.code_mode.direct_only_tool_namespaces"]) == ["mcp__mage"]
+    # A plain code_mode boolean conflicts with the table that holds the namespace list.
+    assert "features.code_mode" not in configs
+    for key in (
+        "skills.include_instructions",
+        "agents.enabled",
+        "include_collaboration_mode_instructions",
+        "include_permissions_instructions",
+        "include_environment_context",
+    ):
+        assert configs[key] == "false"
+    # Every setting is passed for this run only; the user's own Codex config is never read or written.
+    assert all(not value.endswith(".toml") for value in command)
+
+
 def test_provider_credentials_are_removed_only_from_child_environment(monkeypatch):
     names = [
         "OPENAI_API_KEY",

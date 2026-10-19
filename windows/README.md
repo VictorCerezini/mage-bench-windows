@@ -238,6 +238,14 @@ counts as new and is sent. The first board of every turn, and every board after
 never older than the current turn. `get_oracle_text` still looks up any card.
 Stack, choices and combat entries are never shortened.
 
+The ChatGPT player has Codex call the game tools directly
+(`features.code_mode.direct_only_tool_namespaces=["mcp__mage"]`). Codex's
+JavaScript code mode would otherwise show the model every result twice, and turn
+a long human turn into 30-second polls that cut the board short. Codex's
+skills, sub-agent, collaboration, permissions and environment sections are also
+left out of the player's prompt. These are `-c` flags on the player's own Codex
+command; your Codex configuration and other projects are not affected.
+
 Native and Codex tool waits extend slightly beyond the existing two-hour gameplay
 bound (7,230 and 7,260 seconds), so a human thinking for three minutes does not
 cause a tool timeout. The supervisor still checks table cancellation/window

@@ -77,12 +77,20 @@ def command(mcp_url=None, *, model=MODEL, reasoning="medium", tool_timeout_secon
         "features.multi_agent": False,
         "features.memories": False,
         "features.code_mode_host": True,
-        "features.code_mode": False,
         "features.skip_host_skill_discovery": True,
+        # Coding-agent prompt sections the game player cannot use; each is resent with every request.
+        "skills.include_instructions": False,
+        "agents.enabled": False,
+        "include_collaboration_mode_instructions": False,
+        "include_permissions_instructions": False,
+        "include_environment_context": False,
     }
     if mcp_url:
         configs.update(
             {
+                # Called through code mode's JavaScript cell, every result reached the model twice and a
+                # long human turn turned into 30-second polls that cut the board short.
+                "features.code_mode.direct_only_tool_namespaces": ["mcp__mage"],
                 "mcp_servers.mage.url": mcp_url,
                 "mcp_servers.mage.required": True,
                 "mcp_servers.mage.enabled_tools": TOOLS,
