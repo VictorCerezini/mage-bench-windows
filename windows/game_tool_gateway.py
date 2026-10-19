@@ -103,6 +103,24 @@ class GameToolGateway:
                         if is_call and "error" not in response and not isinstance(response.get("result"), dict):
                             raise ValueError("Invalid native tool result")
                     record["response"] = response
+                    answered = response
+                    if is_call and gateway.view and gateway.view.needs_auto_pass(record["effective_tool"], response):
+                        # Nothing is playable after this action, so its window is passed without a model turn.
+                        passing = {
+                            "jsonrpc": "2.0",
+                            "id": payload.get("id"),
+                            "method": "tools/call",
+                            "params": {"name": "pass_priority", "arguments": {}},
+                        }
+                        _pass_status, raw_pass = gateway.forward_request(passing)
+                        record["upstream_response_bytes"] += len(raw_pass)
+                        passed = json.loads(raw_pass) if raw_pass else None
+                        if not isinstance(passed, dict) or (
+                            "error" not in passed and not isinstance(passed.get("result"), dict)
+                        ):
+                            raise ValueError("Invalid native pass result")
+                        record["auto_pass_response"] = passed
+                        answered = gateway.view.merge_auto_pass(response, passed)
                     if method == "tools/list" and response and "result" in response:
                         gateway.describe_tools(response)
                     if (
@@ -112,7 +130,7 @@ class GameToolGateway:
                     ):
                         record["outcome"] = "upstream_error"
                     outgoing = (
-                        gateway.view.model_response(params["name"], response) if is_call and gateway.view else response
+                        gateway.view.model_response(params["name"], answered) if is_call and gateway.view else response
                     )
                 except (TimeoutError, urllib.error.URLError, ConnectionError, OSError, ValueError) as error:
                     if gateway.view:
@@ -191,9 +209,11 @@ class GameToolGateway:
 
     def optimization_stats(self):
         return {
-            "policy": "gui-efficient-v1" if self.view else "native",
+            "policy": "gui-efficient-v2" if self.view else "native",
             "batched_pass_attempts": self.view.batched_pass_attempts if self.view else 0,
+            "auto_passes": self.view.auto_passes if self.view else 0,
             "omitted_boards": self.view.omitted_boards if self.view else 0,
+            "omitted_rules": self.view.omitted_rules if self.view else 0,
             "failed_calls": self.failed_calls,
             "upstream_response_bytes": self.upstream_response_bytes,
             "model_response_bytes": self.model_response_bytes,

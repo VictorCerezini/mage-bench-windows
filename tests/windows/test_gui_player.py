@@ -91,7 +91,7 @@ def harness(tmp_path, monkeypatch):
         call_count=0,
         fatal_error=None,
         close=lambda: None,
-        optimization_stats=lambda: {"policy": "gui-efficient-v1"},
+        optimization_stats=lambda: {"policy": "gui-efficient-v2"},
     )
     monkeypatch.setattr(gui_player.socket, "socket", FakeSocket)
 
@@ -149,7 +149,7 @@ def test_selection_reaches_player_only_after_game_starts(harness, monkeypatch, p
     assert manifest["status"] == "completed"
     assert manifest["cleanup_complete"] is True
     assert manifest["usage"][0]["input_tokens"] == 10
-    assert manifest["optimization"]["policy"] == "gui-efficient-v1"
+    assert manifest["optimization"]["policy"] == "gui-efficient-v2"
     assert len(stopped) == 2
 
 

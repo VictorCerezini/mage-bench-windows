@@ -206,13 +206,21 @@ missing observer completion is a harness failure, not a valid reported win.
 
 ## Efficient subscription play
 
-GUI matches use the `gui-efficient-v1` tool policy. Your selected model and
+GUI matches use the `gui-efficient-v2` tool policy. Your selected model and
 reasoning stay unchanged. When the model submits `choice=no` alone at an observed
 empty ordinary priority prompt, the gateway sends native `pass_priority` without
 an `until` target. This waits through empty windows and returns for playable
 actions, combat and other decisions. Mulligans, targets, amounts, mana choices,
 combat selections and prompts with listed actions are not rerouted. Nothing is
 automatically conceded, and failed actions are never automatically retried.
+
+When one of the model's actions leaves it at such an empty prompt, where nothing
+is playable, the gateway passes that prompt itself in the same way. The model's
+reply is then its next real decision, marked `auto_passed`, with the action's own
+outcome (`action_taken`, `success`, declared attackers) kept in `previous_action`.
+This saves a model turn that could only pass. A window the model reached with
+`pass_priority` and an `until` target is left for the model. If the bridge
+refuses the pass, the model gets the empty prompt as before.
 
 Exact repeated boards are replaced by `board_unchanged` and a `board_reference` to
 the previous full board. Changes to rules, life, counters, zones or any other board
@@ -221,6 +229,14 @@ are always retained. `get_action_choices` requests a full snapshot, ignoring the
 native board cursor, so the model can recover after context compaction. If no
 board is currently available, the next available board is full. Caches belong to
 one gateway/player. Both MCP output representations remain synchronized.
+
+A card's rules text is sent once per turn. Within a turn, a board card whose exact
+name and rules text the model was already shown has its `rules` left out, and the
+reply carries `rules_omitted`. Changed text, such as a condition that is now met,
+counts as new and is sent. The first board of every turn, and every board after
+`get_action_choices` or `get_game_state`, shows all rules again, so omitted text is
+never older than the current turn. `get_oracle_text` still looks up any card.
+Stack, choices and combat entries are never shortened.
 
 Native and Codex tool waits extend slightly beyond the existing two-hour gameplay
 bound (7,230 and 7,260 seconds), so a human thinking for three minutes does not

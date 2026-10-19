@@ -36,6 +36,8 @@ PROMPT = (
     "At an empty ordinary priority prompt, choice=no alone also uses that blocking pass. "
     "A board_unchanged result references the previous full board by board_reference; all other fields are current. "
     "If that full board is missing from your context, call get_action_choices to recover it before deciding. "
+    "Card rules text already shown this turn is left out (rules_omitted); each new turn shows it all again. "
+    "An empty priority prompt after your action is passed for you (auto_passed), and the reply is your next decision. "
     "Continue until the bridge reports game_over or player_dead. Do not stop after "
     "a few moves or concede just to finish. Avoid commentary overhead. Do not supply the human's moves "
     "or look for outside information. In multiplayer, inspect all players and legal targets rather than "
@@ -127,7 +129,7 @@ def run_player(request, *, start_player=None, runtime=None):
         "player_count": request["player_count"],
         "auth": provider.auth,
         "api_mode": False,
-        "tool_policy": "gui-efficient-v1",
+        "tool_policy": "gui-efficient-v2",
         "started_at_utc": datetime.now(UTC).isoformat(),
         "usage": [],
     }
